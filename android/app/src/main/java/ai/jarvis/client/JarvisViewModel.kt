@@ -24,33 +24,26 @@ data class JarvisUiState(
     val lastAssistantText: String? = null,
     val listening: Boolean = false,
     val speaking: Boolean = false,
+    val connected: Boolean = false,
+    val connectionChecking: Boolean = false,
 )
 
 class JarvisViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("jarvis", Context.MODE_PRIVATE)
-    private val _state = MutableStateFlow(
-        JarvisUiState(
-            endpoint = prefs.getString("endpoint", BuildConfig.DEFAULT_API_BASE_URL)
-                ?: BuildConfig.DEFAULT_API_BASE_URL
-        )
-    )
+    private val _state = MutableStateFlow(JarvisUiState(endpoint = prefs.getString("endpoint", BuildConfig.DEFAULT_API_BASE_URL) ?: BuildConfig.DEFAULT_API_BASE_URL))
     val state: StateFlow<JarvisUiState> = _state.asStateFlow()
 
-    fun setInput(value: String) {
-        _state.value = _state.value.copy(input = value, error = null)
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            while (true) { checkConnection(); kotlinx.coroutines.delay(15_000) }
+        }
     }
 
-    fun setEndpoint(value: String) {
-        _state.value = _state.value.copy(endpoint = value.trimEnd('/'), error = null)
-    }
-
-    fun setListening(active: Boolean) {
-        _state.value = _state.value.copy(listening = active)
-    }
-
-    fun setSpeaking(active: Boolean) {
-        _state.value = _state.value.copy(speaking = active)
-    }
+    fun setInput(value: String) { _state.value = _state.value.copy(input = value, error = null) }
+    fun setEndpoint(value: String) { _state.value = _state.value.copy(endpoint = value.trimEnd('/'), error = null, connected = false) }
+    fun setListening(active: Boolean) { _state.value = _state.value.copy(listening = active) }
+    fun refreshConnection() { viewModelScope.launch(Dispatchers.IO) { checkConnection() } }
+    fun setSpeaking(active: Boolean) { _state.value = _state.value.copy(speaking = active) }
 
     fun send() {
         val message = _state.value.input.trim()
@@ -60,69 +53,56 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             _state.value = _state.value.copy(error = "API endpoint must start with http:// or https://")
             return
         }
-
         prefs.edit().putString("endpoint", endpoint).apply()
-        _state.value = _state.value.copy(
-            input = "",
-            messages = _state.value.messages + ChatMessage(message, true),
-            busy = true,
-            error = null,
-            listening = false,
-        )
-
+        _state.value = _state.value.copy(input = "", messages = _state.value.messages + ChatMessage(message, true), busy = true, error = null, listening = false)
         viewModelScope.launch(Dispatchers.IO) {
-            val result = try {
-                postChat(endpoint, message)
-            } catch (error: Exception) {
-                Result.failure(error)
-            }
-
+            val result = try { postWithRetry(endpoint, message) } catch (error: Exception) { Result.failure(error) }
             result.fold(
-                onSuccess = { answer ->
-                    _state.value = _state.value.copy(
-                        messages = _state.value.messages + ChatMessage(answer, false),
-                        busy = false,
-                        speakToken = _state.value.speakToken + 1,
-                        lastAssistantText = answer,
-                    )
-                },
+                onSuccess = { answer -> _state.value = _state.value.copy(messages = _state.value.messages + ChatMessage(answer, false), busy = false, speakToken = _state.value.speakToken + 1, lastAssistantText = answer, connected = true) },
                 onFailure = { error ->
                     val detail = error.message ?: "unknown error"
-                    _state.value = _state.value.copy(
-                        messages = _state.value.messages + ChatMessage("API error: " + detail, false),
-                        busy = false,
-                        error = detail,
-                    )
+                    _state.value = _state.value.copy(messages = _state.value.messages + ChatMessage("API error: " + detail, false), busy = false, error = detail, connected = false)
                 },
             )
         }
     }
 
-    private fun postChat(endpoint: String, message: String): Result<String> {
-        val connection = (URL("$endpoint/chat").openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 10_000
-            readTimeout = 60_000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Accept", "application/json")
+    private fun postWithRetry(endpoint: String, message: String): Result<String> {
+        var last: Exception = IllegalStateException("Connection failed")
+        repeat(3) { attempt ->
+            try { return postChat(endpoint, message) }
+            catch (error: Exception) { last = error; if (attempt < 2) Thread.sleep(500L * (attempt + 1)) }
         }
+        return Result.failure(last)
+    }
 
+    private fun checkConnection() {
+        val endpoint = _state.value.endpoint.trim().trimEnd('/')
+        if (!endpoint.startsWith("http://") && !endpoint.startsWith("https://")) { _state.value = _state.value.copy(connected = false, connectionChecking = false); return }
+        _state.value = _state.value.copy(connectionChecking = true)
+        try {
+            val connection = (URL(endpoint + "/health").openConnection() as HttpURLConnection).apply { requestMethod = "GET"; connectTimeout = 5_000; readTimeout = 5_000 }
+            val status = try { connection.responseCode } finally { connection.disconnect() }
+            _state.value = _state.value.copy(connected = status in 200..299, connectionChecking = false)
+        } catch (_: Exception) { _state.value = _state.value.copy(connected = false, connectionChecking = false) }
+    }
+
+    private fun postChat(endpoint: String, message: String): Result<String> {
+        val connection = (URL(endpoint + "/chat").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"; connectTimeout = 10_000; readTimeout = 60_000; doOutput = true
+            setRequestProperty("Content-Type", "application/json"); setRequestProperty("Accept", "application/json")
+        }
         return try {
             val body = JSONObject().put("message", message).toString()
             connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             val status = connection.responseCode
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (status !in 200..299) {
-                Result.failure(IllegalStateException("HTTP $status: $response"))
-            } else {
+            if (status !in 200..299) Result.failure(IllegalStateException("HTTP $status: $response"))
+            else {
                 val answer = JSONObject(response).optString("response")
-                if (answer.isBlank()) Result.failure(IllegalStateException("Server returned no response"))
-                else Result.success(answer)
+                if (answer.isBlank()) Result.failure(IllegalStateException("Server returned no response")) else Result.success(answer)
             }
-        } finally {
-            connection.disconnect()
-        }
+        } finally { connection.disconnect() }
     }
 }
