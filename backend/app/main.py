@@ -1,5 +1,5 @@
 import asyncio
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import Body, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 from .brain import BrainRuntime, LocalBrain
 from .memory import MemoryStore
@@ -160,7 +160,7 @@ def create_app(memory=None, brain=None, tools=None, research=None):
         except ValueError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/screen/frame/{device_id}")
-    async def upload_screen_frame(device_id: str, body: bytes, content_type: str | None = Header(default=None), width: int = 0, height: int = 0):
+    async def upload_screen_frame(device_id: str, body: bytes = Body(...), content_type: str | None = Header(default=None), width: int = 0, height: int = 0):
         try: frame=screen.store_frame(device_id, body, content_type or "image/jpeg", width, height)
         except (KeyError, ValueError) as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"device_id": frame.device_id, "width": frame.width, "height": frame.height, "captured_at": frame.captured_at}
