@@ -1,18 +1,14 @@
 """Concurrent five-robot fleet coordination backed by the reasoning engine."""
 from __future__ import annotations
-
 from dataclasses import dataclass, field
 from time import time
 from typing import Awaitable, Callable
-
 from ..reasoning import ReasoningEngine, ReasoningStep, StepStatus
-
 
 @dataclass(frozen=True)
 class RobotJob:
     robot_id: str
     command: str
-
 
 @dataclass
 class RobotState:
@@ -24,14 +20,16 @@ class RobotState:
     sequence: int = 0
     updated_at: float = field(default_factory=time)
 
-
 class RobotFleetCoordinator:
     """Coordinate up to five robots through dependency-aware reasoning."""
     MAX_ROBOTS = 5
 
-    def __init__(self, worker: Callable[[RobotJob], Awaitable[str]], reasoning: ReasoningEngine | None = None):
+    def __init__(self, worker: Callable[[RobotJob], Awaitable[str]], reasoning: ReasoningEngine | None = None, max_concurrency: int | None = None):
         self._worker = worker
-        self._reasoning = reasoning or ReasoningEngine(max_concurrency=self.MAX_ROBOTS)
+        if reasoning is not None:
+            self._reasoning = reasoning
+        else:
+            self._reasoning = ReasoningEngine(max_concurrency=max_concurrency or self.MAX_ROBOTS)
         self._states: dict[str, RobotState] = {}
 
     def states(self) -> list[RobotState]:
@@ -45,7 +43,7 @@ class RobotFleetCoordinator:
 
     async def dispatch(self, jobs: list[RobotJob]) -> list[dict[str, str]]:
         if not 1 <= len(jobs) <= self.MAX_ROBOTS:
-            raise ValueError(f"JARVIS supports 1 to {self.MAX_ROBOTS} robots per dispatch")
+            raise ValueError(f"JARVIS supports one to five robots per dispatch (maximum {self.MAX_ROBOTS})")
         ids = [job.robot_id.strip() for job in jobs]
         if any(not robot_id for robot_id in ids):
             raise ValueError("robot_id is required")
@@ -57,20 +55,12 @@ class RobotFleetCoordinator:
             robot_id = step.step_id.removeprefix("robot:")
             job = next(job for job in jobs if job.robot_id == robot_id)
             state = self._state(robot_id)
-            state.status = "executing"
-            state.last_command = job.command
-            state.sequence += 1
-            state.updated_at = time()
+            state.status = "executing"; state.last_command = job.command; state.sequence += 1; state.updated_at = time()
             try:
                 result = await self._worker(job)
             except Exception as exc:
-                state.status = "failed"
-                state.last_result = str(exc)
-                state.updated_at = time()
-                raise
-            state.status = "completed"
-            state.last_result = result
-            state.updated_at = time()
+                state.status = "failed"; state.last_result = str(exc); state.updated_at = time(); raise
+            state.status = "completed"; state.last_result = result; state.updated_at = time()
             return result
 
         completed = await self._reasoning.execute(plan, run_step)
