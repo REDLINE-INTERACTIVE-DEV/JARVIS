@@ -1,20 +1,29 @@
+from unittest.mock import Mock
+
 from fastapi.testclient import TestClient
 
 from backend.app.brain import LocalBrain
 from backend.app.main import create_app
 from backend.app.memory import MemoryStore
+from backend.app.research import ResearchEngine, SearchResult
 from backend.app.tasks import TaskEngine
 
 
-def make_client(tmp_path):
-    return TestClient(create_app(memory=MemoryStore(str(tmp_path / "jarvis.db"))))
+def make_client(tmp_path, research=None):
+    return TestClient(
+        create_app(
+            memory=MemoryStore(str(tmp_path / "jarvis.db")),
+            research=research or ResearchEngine(),
+        )
+    )
 
 
 def test_health(tmp_path):
     response = make_client(tmp_path).get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["brain"]
+    assert response.json()["brain"] == "local-foundation"
+    assert response.json()["research"] == "duckduckgo-html"
 
 
 def test_voice_states(tmp_path):
@@ -76,3 +85,21 @@ def test_task_planner_rejects_blank():
 
 def test_brain_handles_blank_message():
     assert LocalBrain().respond(" ", []) == "Please say something and I'll respond."
+
+
+def test_research_detection():
+    assert ResearchEngine.should_search("search for the weather")
+    assert ResearchEngine.clean_query("search for the weather") == "the weather"
+    assert not ResearchEngine.should_search("hello search later")
+
+
+def test_search_endpoint_uses_provider(tmp_path):
+    provider = Mock(spec=ResearchEngine)
+    provider.search.return_value = [
+        SearchResult("Example", "https://example.com", "Example snippet")
+    ]
+    client = make_client(tmp_path, provider)
+    response = client.post("/search", json={"query": "example"})
+    assert response.status_code == 200
+    assert response.json()["results"][0]["title"] == "Example"
+    provider.search.assert_called_once_with("example", 5)

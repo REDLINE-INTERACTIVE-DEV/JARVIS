@@ -61,8 +61,11 @@ class LocalBrain:
         if self._llm is not None:
             context = self._memory_context(memories)
             prompt = (
-                "You are JARVIS, a concise local personal AI assistant. "
-                "Use the supplied memory only as context; do not invent facts.\n\n"
+                "You are JARVIS, a composed, precise personal AI assistant. "
+                "Be helpful, concise, calm, and conversational. "
+                "Use memory only as context and never invent facts. "
+                "When current web results are supplied, distinguish them from "
+                "your own reasoning and cite the supplied source URLs.\n\n"
                 f"Memory:\n{context or '(none)'}\n\n"
                 f"User: {message}\n"
                 "JARVIS:"
@@ -81,3 +84,38 @@ class LocalBrain:
                 pass
 
         return f"Local foundation mode is active. You said: {message}"
+
+    def answer_with_research(
+        self,
+        message: str,
+        memories: list[dict[str, Any]],
+        results: list[dict[str, str]],
+    ) -> str:
+        if not results:
+            return "I searched the web, but I couldn't find usable results."
+        context = "\n".join(
+            f"- {item['title']} | {item['url']} | {item['snippet']}"
+            for item in results
+        )
+        if self._llm is None:
+            return "I found these results:\n" + "\n".join(
+                f"{i + 1}. {item['title']} — {item['url']}"
+                for i, item in enumerate(results)
+            )
+
+        prompt = (
+            "You are JARVIS. Answer the user's request using ONLY the supplied "
+            "web-search results for current factual claims. Give a concise "
+            "summary and mention the relevant source URLs. If the results are "
+            "insufficient, say so clearly.\n\n"
+            f"User: {message}\n\nSearch results:\n{context}\n\nJARVIS:"
+        )
+        try:
+            result = self._llm(prompt, max_tokens=700, stop=["\nUser:", "\nJARVIS:"])
+            choices = result.get("choices", [])
+            answer = choices[0].get("text", "").strip() if choices else ""
+            if answer:
+                return answer
+        except Exception:
+            pass
+        return "I found search results, but I couldn't summarize them locally."

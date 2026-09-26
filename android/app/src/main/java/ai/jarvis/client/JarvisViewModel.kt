@@ -22,6 +22,8 @@ data class JarvisUiState(
     val error: String? = null,
     val speakToken: Long = 0,
     val lastAssistantText: String? = null,
+    val listening: Boolean = false,
+    val speaking: Boolean = false,
 )
 
 class JarvisViewModel(application: Application) : AndroidViewModel(application) {
@@ -42,6 +44,14 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         _state.value = _state.value.copy(endpoint = value.trimEnd('/'), error = null)
     }
 
+    fun setListening(active: Boolean) {
+        _state.value = _state.value.copy(listening = active)
+    }
+
+    fun setSpeaking(active: Boolean) {
+        _state.value = _state.value.copy(speaking = active)
+    }
+
     fun send() {
         val message = _state.value.input.trim()
         if (message.isEmpty() || _state.value.busy) return
@@ -57,6 +67,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             messages = _state.value.messages + ChatMessage(message, true),
             busy = true,
             error = null,
+            listening = false,
         )
 
         viewModelScope.launch(Dispatchers.IO) {
