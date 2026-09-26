@@ -74,6 +74,36 @@ def test_task_confirmation_and_completion(tmp_path):
     assert completed["status"] == "completed"
 
 
+def test_explicit_safe_prerequisites_run_without_second_confirmation(tmp_path):
+    client = make_client(tmp_path)
+    completed = client.post(
+        "/tasks",
+        json={"message": "computer:open_door; activate_demo"},
+    ).json()
+    assert completed["status"] == "completed"
+    assert [step["arguments"]["action"] for step in completed["steps"]] == [
+        "open_door",
+        "activate_demo",
+    ]
+    assert len(completed["result"]["results"]) == 2
+    assert all(item["ok"] for item in completed["result"]["results"])
+
+
+def test_destructive_step_still_stops_the_sequence_for_confirmation(tmp_path):
+    client = make_client(tmp_path)
+    pending = client.post(
+        "/tasks",
+        json={"message": "computer:open_door; delete_file; activate_demo"},
+    ).json()
+    assert pending["status"] == "awaiting_confirmation"
+    assert [step["arguments"]["action"] for step in pending["steps"]] == [
+        "open_door",
+        "delete_file",
+    ]
+    assert len(pending["result"]["results"]) == 1
+    assert pending["result"]["pending"]["confirmation_required"] is True
+
+
 def test_task_uses_async_brain_runtime(tmp_path):
     from backend.app.brain.runtime import BrainRuntime
 
