@@ -20,15 +20,27 @@ data class JarvisUiState(
     val messages: List<ChatMessage> = emptyList(),
     val busy: Boolean = false,
     val error: String? = null,
+    val speakToken: Long = 0,
+    val lastAssistantText: String? = null,
 )
 
 class JarvisViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("jarvis", Context.MODE_PRIVATE)
-    private val _state = MutableStateFlow(JarvisUiState(endpoint = prefs.getString("endpoint", BuildConfig.DEFAULT_API_BASE_URL) ?: BuildConfig.DEFAULT_API_BASE_URL))
+    private val _state = MutableStateFlow(
+        JarvisUiState(
+            endpoint = prefs.getString("endpoint", BuildConfig.DEFAULT_API_BASE_URL)
+                ?: BuildConfig.DEFAULT_API_BASE_URL
+        )
+    )
     val state: StateFlow<JarvisUiState> = _state.asStateFlow()
 
-    fun setInput(value: String) { _state.value = _state.value.copy(input = value, error = null) }
-    fun setEndpoint(value: String) { _state.value = _state.value.copy(endpoint = value.trimEnd('/'), error = null) }
+    fun setInput(value: String) {
+        _state.value = _state.value.copy(input = value, error = null)
+    }
+
+    fun setEndpoint(value: String) {
+        _state.value = _state.value.copy(endpoint = value.trimEnd('/'), error = null)
+    }
 
     fun send() {
         val message = _state.value.input.trim()
@@ -38,15 +50,38 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             _state.value = _state.value.copy(error = "API endpoint must start with http:// or https://")
             return
         }
+
         prefs.edit().putString("endpoint", endpoint).apply()
-        _state.value = _state.value.copy(input = "", messages = _state.value.messages + ChatMessage(message, true), busy = true, error = null)
+        _state.value = _state.value.copy(
+            input = "",
+            messages = _state.value.messages + ChatMessage(message, true),
+            busy = true,
+            error = null,
+        )
+
         viewModelScope.launch(Dispatchers.IO) {
-            val result = try { postChat(endpoint, message) } catch (error: Exception) { Result.failure(error) }
+            val result = try {
+                postChat(endpoint, message)
+            } catch (error: Exception) {
+                Result.failure(error)
+            }
+
             result.fold(
-                onSuccess = { answer -> _state.value = _state.value.copy(messages = _state.value.messages + ChatMessage(answer, false), busy = false) },
+                onSuccess = { answer ->
+                    _state.value = _state.value.copy(
+                        messages = _state.value.messages + ChatMessage(answer, false),
+                        busy = false,
+                        speakToken = _state.value.speakToken + 1,
+                        lastAssistantText = answer,
+                    )
+                },
                 onFailure = { error ->
                     val detail = error.message ?: "unknown error"
-                    _state.value = _state.value.copy(messages = _state.value.messages + ChatMessage("API error: " + detail, false), busy = false, error = detail)
+                    _state.value = _state.value.copy(
+                        messages = _state.value.messages + ChatMessage("API error: " + detail, false),
+                        busy = false,
+                        error = detail,
+                    )
                 },
             )
         }
@@ -61,17 +96,22 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Accept", "application/json")
         }
+
         return try {
             val body = JSONObject().put("message", message).toString()
             connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             val status = connection.responseCode
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (status !in 200..299) Result.failure(IllegalStateException("HTTP $status: $response"))
-            else {
+            if (status !in 200..299) {
+                Result.failure(IllegalStateException("HTTP $status: $response"))
+            } else {
                 val answer = JSONObject(response).optString("response")
-                if (answer.isBlank()) Result.failure(IllegalStateException("Server returned no response")) else Result.success(answer)
+                if (answer.isBlank()) Result.failure(IllegalStateException("Server returned no response"))
+                else Result.success(answer)
             }
-        } finally { connection.disconnect() }
+        } finally {
+            connection.disconnect()
+        }
     }
 }

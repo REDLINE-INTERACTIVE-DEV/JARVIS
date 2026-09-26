@@ -32,36 +32,89 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         setContent { JarvisApp(viewModel) }
     }
 
-    override fun onInit(status: Int) { if (status == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault() }
-    override fun onDestroy() { tts?.stop(); tts?.shutdown(); super.onDestroy() }
-    private fun speak(text: String) { tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis") }
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault()
+    }
+
+    override fun onDestroy() {
+        tts?.stop()
+        tts?.shutdown()
+        super.onDestroy()
+    }
 
     @Composable
     private fun JarvisApp(vm: JarvisViewModel) {
         val state by vm.state.collectAsState()
         val context = LocalContext.current
         var recognizer by remember { mutableStateOf<SpeechRecognizer?>(null) }
-        val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+
+        val permissionLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
             if (granted) startListening(context)
         }
-        DisposableEffect(Unit) { onDispose { recognizer?.destroy(); recognizer = null } }
+
+        LaunchedEffect(state.speakToken) {
+            if (state.speakToken > 0) state.lastAssistantText?.let { speak(it) }
+        }
+
+        DisposableEffect(Unit) {
+            onDispose {
+                recognizer?.destroy()
+                recognizer = null
+            }
+        }
 
         MaterialTheme {
-            Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                Modifier.fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Text("JARVIS", style = MaterialTheme.typography.headlineMedium)
-                OutlinedTextField(value = state.endpoint, onValueChange = vm::setEndpoint, label = { Text("API endpoint") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(
+                    value = state.endpoint,
+                    onValueChange = vm::setEndpoint,
+                    label = { Text("API endpoint") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                LazyColumn(
+                    Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     items(state.messages) { message ->
                         Text(if (message.fromUser) "You: " + message.text else "JARVIS: " + message.text)
                     }
                 }
-                state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = state.input, onValueChange = vm::setInput, label = { Text("Message") }, modifier = Modifier.weight(1f), enabled = !state.busy)
-                    Button(onClick = {
-                        if (SpeechRecognizer.isRecognitionAvailable(context)) permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                    }, enabled = !state.busy) { Text("Voice") }
-                    Button(onClick = { vm.send() }, enabled = !state.busy && state.input.isNotBlank()) { Text(if (state.busy) "..." else "Send") }
+
+                state.error?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error)
+                }
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = state.input,
+                        onValueChange = vm::setInput,
+                        label = { Text("Message") },
+                        modifier = Modifier.weight(1f),
+                        enabled = !state.busy,
+                    )
+                    Button(
+                        onClick = {
+                            if (SpeechRecognizer.isRecognitionAvailable(context)) {
+                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                        enabled = !state.busy,
+                    ) { Text("Voice") }
+                    Button(
+                        onClick = vm::send,
+                        enabled = !state.busy && state.input.isNotBlank(),
+                    ) { Text(if (state.busy) "..." else "Send") }
                 }
             }
         }
@@ -72,12 +125,15 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         recognizer = SpeechRecognizer.createSpeechRecognizer(context).also { sr ->
             sr.setRecognitionListener(object : RecognitionListener {
                 override fun onResults(results: Bundle?) {
-                    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let {
-                        viewModel.setInput(it)
-                        viewModel.send()
-                    }
+                    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        ?.firstOrNull()
+                        ?.let {
+                            viewModel.setInput(it)
+                            viewModel.send()
+                        }
                     sr.destroy()
                 }
+
                 override fun onError(error: Int) { sr.destroy() }
                 override fun onReadyForSpeech(params: Bundle?) {}
                 override fun onBeginningOfSpeech() {}
@@ -94,5 +150,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }
             sr.startListening(intent)
         }
+    }
+
+    private fun speak(text: String) {
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis")
     }
 }
