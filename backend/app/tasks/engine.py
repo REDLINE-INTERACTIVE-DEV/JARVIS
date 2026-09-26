@@ -83,3 +83,48 @@ class TaskEngine:
             "steps": [step.__dict__],
             "result": {"ok": True, "output": answer},
         }
+    async def run_async(
+        self,
+        request: str,
+        responder: Callable[[str], Any],
+        confirmed: bool = False,
+    ) -> dict[str, Any]:
+        """Execute the task pipeline with an awaitable brain responder."""
+        steps = self.plan(request)
+        step = steps[0]
+
+        if step.action == "computer":
+            result = self._tool_call(step.action, step.arguments, confirmed=confirmed)
+            if result.get("confirmation_required"):
+                return {
+                    "status": TaskStatus.AWAITING_CONFIRMATION.value,
+                    "steps": [step.__dict__],
+                    "result": result,
+                }
+            if not result.get("ok"):
+                return {
+                    "status": TaskStatus.FAILED.value,
+                    "steps": [step.__dict__],
+                    "result": result,
+                }
+            return {
+                "status": TaskStatus.COMPLETED.value,
+                "steps": [step.__dict__],
+                "result": result,
+            }
+
+        try:
+            answer = await responder(step.arguments["request"])
+        except Exception as exc:
+            return {
+                "status": TaskStatus.FAILED.value,
+                "steps": [step.__dict__],
+                "result": {"ok": False, "output": str(exc)},
+            }
+
+        return {
+            "status": TaskStatus.COMPLETED.value,
+            "steps": [step.__dict__],
+            "result": {"ok": True, "output": answer},
+        }
+

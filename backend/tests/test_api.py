@@ -74,6 +74,20 @@ def test_task_confirmation_and_completion(tmp_path):
     assert completed["status"] == "completed"
 
 
+def test_task_uses_async_brain_runtime(tmp_path):
+    from backend.app.brain.runtime import BrainRuntime
+
+    class FakeRuntime(BrainRuntime):
+        async def respond(self, message, memories):
+            return f"runtime:{message}"
+
+    memory = MemoryStore(str(tmp_path / "jarvis.db"))
+    client = TestClient(create_app(memory=memory, brain=FakeRuntime()))
+    response = client.post("/tasks", json={"message": "solve this"})
+    assert response.status_code == 200
+    assert response.json()["result"]["output"] == "runtime:solve this"
+
+
 def test_task_planner_rejects_blank():
     engine = TaskEngine(lambda *args, **kwargs: {"ok": True})
     try:

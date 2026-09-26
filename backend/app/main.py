@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
@@ -132,11 +133,14 @@ def create_app(
 
     @app.post("/tasks")
     async def run_task(req: TaskRequest):
-        return tasks.run(
+        async def task_responder(message: str) -> str:
+            if isinstance(brain, BrainRuntime):
+                return await brain.respond(message, memory.recent(20))
+            return await asyncio.to_thread(brain.respond, message, memory.recent(20))
+
+        return await tasks.run_async(
             req.message,
-            responder=lambda m: brain.brain.respond(m, memory.recent(20))
-            if isinstance(brain, BrainRuntime)
-            else brain.respond(m, memory.recent(20)),
+            responder=task_responder,
             confirmed=req.confirmed,
         )
 
