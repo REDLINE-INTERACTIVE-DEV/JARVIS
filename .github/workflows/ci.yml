@@ -21,11 +21,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with: {distribution: "temurin", java-version: "17"}
-      - name: Prepare Android SDK
+      - name: Inspect Android SDK
         shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          command -v sdkmanager || true
+          test -d "$ANDROID_HOME" && find "$ANDROID_HOME" -maxdepth 3 -type f -name sdkmanager -print || true
       - uses: gradle/actions/setup-gradle@v4
       - run: gradle -p android :app:assembleDebug
       - run: |
@@ -54,4 +56,5 @@ jobs:
       - run: python -m pip install -r desktop/requirements.txt
       - run: pyinstaller --onefile --windowed --name JARVIS desktop/main.py
       - uses: actions/upload-artifact@v4
-        with: {name: jarvis-desktop-windows, path: dist/JARVIS.exe}
+        with: {name: jarvis-desktop-windows, path: dist/JARVIS.exe
+}
