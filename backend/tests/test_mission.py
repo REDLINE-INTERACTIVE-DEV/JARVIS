@@ -1,7 +1,7 @@
 import asyncio
 
 from backend.app.missions import MissionSupervisor
-from backend.app.robots import RobotJob
+from backend.app.robots import RobotFleetCoordinator, RobotJob
 
 
 def test_mission_supervisor_verifies_completed_fleet():
@@ -10,7 +10,8 @@ def test_mission_supervisor_verifies_completed_fleet():
         return f"ack:{job.robot_id}:{job.command}"
 
     async def run():
-        supervisor = MissionSupervisor(worker)
+        fleet = RobotFleetCoordinator(worker)
+        supervisor = MissionSupervisor(worker, fleet=fleet)
         report = await supervisor.run(
             "coordinate a five-unit inspection",
             [RobotJob(f"r{i}", "hold position") for i in range(1, 6)],
@@ -18,6 +19,8 @@ def test_mission_supervisor_verifies_completed_fleet():
         assert report.verified is True
         assert report.failed_robots == []
         assert len(report.results) == 5
+        assert len(supervisor.states()) == 5
+        assert {state.status for state in fleet.states()} == {"completed"}
 
     asyncio.run(run())
 

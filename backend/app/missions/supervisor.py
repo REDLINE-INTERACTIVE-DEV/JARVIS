@@ -1,8 +1,7 @@
 """High-level mission supervision for the JARVIS robot fleet.
 
-This layer keeps planning, execution, and verification separate. It does not
-control motors or other physical actuators; a transport worker remains the
-boundary for real hardware integration.
+Planning, execution, and verification stay separate. Physical actuator control
+remains behind the fleet worker boundary.
 """
 
 from __future__ import annotations
@@ -23,14 +22,15 @@ class FleetMissionReport:
 
 
 class MissionSupervisor:
-    """Run a fleet mission and verify the coordinator's final state."""
+    """Run fleet missions and verify the coordinator's final state."""
 
     def __init__(
         self,
         worker: Callable[[RobotJob], Awaitable[str]],
         reasoning: ReasoningEngine | None = None,
+        fleet: RobotFleetCoordinator | None = None,
     ) -> None:
-        self._fleet = RobotFleetCoordinator(worker, reasoning=reasoning)
+        self._fleet = fleet or RobotFleetCoordinator(worker, reasoning=reasoning)
 
     @property
     def fleet(self) -> RobotFleetCoordinator:

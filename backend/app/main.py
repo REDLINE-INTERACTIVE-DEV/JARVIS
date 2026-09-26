@@ -13,7 +13,7 @@ from .voice import VoiceState
 
 
 def create_app(memory=None, brain=None, tools=None, research=None):
-    app = FastAPI(title="JARVIS Local API", version="0.7.0")
+    app = FastAPI(title="JARVIS Local API", version="0.7.1")
     memory = memory or MemoryStore()
     brain = brain or BrainRuntime()
     tools = tools or ToolRegistry()
@@ -112,10 +112,7 @@ def create_app(memory=None, brain=None, tools=None, research=None):
 
     @app.post("/search")
     async def search(req: SearchRequest):
-        return {
-            "query": req.query,
-            "results": [x.as_dict() for x in research.search(req.query, req.limit)],
-        }
+        return {"query": req.query, "results": [x.as_dict() for x in research.search(req.query, req.limit)]}
 
     @app.get("/memory")
     async def get_memory(limit: int = 20):
@@ -133,16 +130,13 @@ def create_app(memory=None, brain=None, tools=None, research=None):
     async def run_task(req: TaskRequest):
         async def responder(message):
             return await answer(message)
-
-        return await tasks.run_async(
-            req.message, responder=responder, confirmed=req.confirmed
-        )
+        return await tasks.run_async(req.message, responder=responder, confirmed=req.confirmed)
 
     async def robot_worker(job):
         return await answer(f"Robot {job.robot_id} job: {job.command}")
 
     fleet = RobotFleetCoordinator(robot_worker, reasoning=reasoning)
-    mission = MissionSupervisor(robot_worker, reasoning=reasoning)
+    mission = MissionSupervisor(robot_worker, reasoning=reasoning, fleet=fleet)
 
     @app.get("/robots/states")
     async def robot_states():
@@ -158,9 +152,7 @@ def create_app(memory=None, brain=None, tools=None, research=None):
     @app.post("/robots/dispatch")
     async def dispatch_robots(req: RobotDispatchRequest):
         try:
-            results = await fleet.dispatch(
-                [RobotJob(x.robot_id, x.command) for x in req.jobs]
-            )
+            results = await fleet.dispatch([RobotJob(x.robot_id, x.command) for x in req.jobs])
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"robot_capacity": 5, "robots": results}
@@ -168,10 +160,7 @@ def create_app(memory=None, brain=None, tools=None, research=None):
     @app.post("/robots/mission")
     async def run_robot_mission(req: RobotMissionRequest):
         try:
-            report = await mission.run(
-                req.objective,
-                [RobotJob(x.robot_id, x.command) for x in req.jobs],
-            )
+            report = await mission.run(req.objective, [RobotJob(x.robot_id, x.command) for x in req.jobs])
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {
