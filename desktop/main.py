@@ -9,6 +9,7 @@ from urllib.request import Request, urlopen
 
 DEFAULT_API = os.getenv("JARVIS_API", "http://127.0.0.1:8000")
 
+
 class JarvisClient:
     def __init__(self, base_url: str = DEFAULT_API):
         self.base_url = base_url.rstrip("/")
@@ -30,8 +31,10 @@ class JarvisClient:
                     return json.loads(response.read().decode("utf-8"))["response"]
             except (HTTPError, URLError, TimeoutError, OSError, KeyError, json.JSONDecodeError) as error:
                 last = error
-                if attempt < 2: time.sleep(0.5 * (attempt + 1))
+                if attempt < 2:
+                    time.sleep(0.5 * (attempt + 1))
         raise last
+
 
 class JarvisDesktop:
     def __init__(self, root: tk.Tk):
@@ -42,10 +45,12 @@ class JarvisDesktop:
         self.status = tk.Label(root, text="○ OFFLINE")
         self.status.pack(anchor="e", padx=12, pady=(8, 0))
         root.geometry("760x700")
+
         self.core = tk.Canvas(root, height=190, highlightthickness=0)
         self.core.pack(fill="x", padx=12, pady=(12, 0))
         self.output = tk.Text(root, state="disabled", wrap="word")
         self.output.pack(fill="both", expand=True, padx=12, pady=12)
+
         bottom = tk.Frame(root)
         bottom.pack(fill="x", padx=12, pady=(0, 12))
         self.entry = tk.Entry(bottom)
@@ -71,16 +76,17 @@ class JarvisDesktop:
 
     def write(self, text: str):
         self.output.configure(state="normal")
-        self.output.insert("end", text + "
-")
+        self.output.insert("end", text + "\n")
         self.output.configure(state="disabled")
         self.output.see("end")
 
     def send(self, message: str | None = None):
         message = (message if message is not None else self.entry.get()).strip()
-        if not message: return
+        if not message:
+            return
         self.entry.delete(0, "end")
         self.write("You: " + message)
+
         def worker():
             try:
                 answer = self.client.chat(message)
@@ -93,6 +99,7 @@ class JarvisDesktop:
                     self.root.after(0, lambda: self.write("Voice: " + str(error)))
             except (HTTPError, URLError, TimeoutError, KeyError, json.JSONDecodeError, OSError) as error:
                 self.root.after(0, lambda: (self.set_connection(False), self.write("JARVIS: API error: " + str(error))))
+
         threading.Thread(target=worker, daemon=True).start()
 
     def voice(self):
@@ -100,7 +107,8 @@ class JarvisDesktop:
             from desktop.voice import listen
             self.write("Listening...")
             threading.Thread(target=self._voice_worker, args=(listen,), daemon=True).start()
-        except Exception as error: self.write("Voice: " + str(error))
+        except Exception as error:
+            self.write("Voice: " + str(error))
 
     def _voice_worker(self, listen):
         try:
@@ -133,6 +141,7 @@ class JarvisDesktop:
         value = tk.Entry(dialog, width=48)
         value.insert(0, self.client.base_url)
         value.pack(padx=12, pady=4)
+
         def save():
             endpoint = value.get().strip().rstrip("/")
             if not endpoint.startswith(("http://", "https://")):
@@ -140,7 +149,9 @@ class JarvisDesktop:
                 return
             self.client.base_url = endpoint
             dialog.destroy()
+
         tk.Button(dialog, text="Save", command=save).pack(pady=12)
+
 
 if __name__ == "__main__":
     root = tk.Tk()
