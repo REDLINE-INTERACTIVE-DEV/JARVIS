@@ -183,6 +183,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             val ring = Stroke(width = 4f, cap = StrokeCap.Round)
 
             drawCircle(
+                color = MaterialTheme.colorScheme.primary,
                 center = center,
                 radius = radius,
                 style = ring,
@@ -206,7 +207,13 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     center.x + cos(angle).toFloat() * outer,
                     center.y + sin(angle).toFloat() * outer,
                 )
-                drawLine(start = start, end = end, strokeWidth = if (active) 4f else 2f, cap = StrokeCap.Round)
+                drawLine(
+                    color = MaterialTheme.colorScheme.primary,
+                    start = start,
+                    end = end,
+                    strokeWidth = if (active) 4f else 2f,
+                    cap = StrokeCap.Round,
+                )
             }
 
             val path = Path()
@@ -217,7 +224,11 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 val y = center.y + sin(i * 0.55f + pulse * 6f) * if (active) 10f else 3f
                 if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
-            drawPath(path, style = Stroke(width = 3f, cap = StrokeCap.Round))
+            drawPath(
+                path = path,
+                color = MaterialTheme.colorScheme.primary,
+                style = Stroke(width = 3f, cap = StrokeCap.Round),
+            )
         }
     }
 
