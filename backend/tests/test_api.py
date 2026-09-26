@@ -1,6 +1,9 @@
 from fastapi.testclient import TestClient
+
+from backend.app.brain import LocalBrain
 from backend.app.main import create_app
 from backend.app.memory import MemoryStore
+from backend.app.tasks import TaskEngine
 
 
 def make_client(tmp_path):
@@ -17,7 +20,7 @@ def test_health(tmp_path):
 def test_voice_states(tmp_path):
     response = make_client(tmp_path).get("/voice/states")
     assert response.status_code == 200
-    assert {"idle", "listening", "thinking", "speaking", "error"}.issubset(response.json()["states"])
+    assert {"idle", "listening", "thinking", "speaking", "error"} <= set(response.json()["states"])
 
 
 def test_chat_and_memory(tmp_path):
@@ -35,12 +38,18 @@ def test_memory_validation(tmp_path):
 
 
 def test_unknown_tool(tmp_path):
-    body = make_client(tmp_path).post("/tools/call", json={"name": "does_not_exist", "arguments": {}}).json()
+    body = make_client(tmp_path).post(
+        "/tools/call",
+        json={"name": "does_not_exist", "arguments": {}},
+    ).json()
     assert body["ok"] is False
 
 
 def test_destructive_tool_is_gated(tmp_path):
-    body = make_client(tmp_path).post("/tools/call", json={"name": "computer", "arguments": {"action": "delete_file"}}).json()
+    body = make_client(tmp_path).post(
+        "/tools/call",
+        json={"name": "computer", "arguments": {"action": "delete_file"}},
+    ).json()
     assert body["confirmation_required"] is True
 
 
@@ -48,5 +57,22 @@ def test_task_confirmation_and_completion(tmp_path):
     client = make_client(tmp_path)
     pending = client.post("/tasks", json={"message": "computer:delete_file"}).json()
     assert pending["status"] == "awaiting_confirmation"
-    completed = client.post("/tasks", json={"message": "computer:open_app", "confirmed": True}).json()
+    completed = client.post(
+        "/tasks",
+        json={"message": "computer:open_app", "confirmed": True},
+    ).json()
     assert completed["status"] == "completed"
+
+
+def test_task_planner_rejects_blank():
+    engine = TaskEngine(lambda *args, **kwargs: {"ok": True})
+    try:
+        engine.plan(" ")
+    except ValueError as exc:
+        assert str(exc) == "request is required"
+    else:
+        raise AssertionError("blank task should be rejected")
+
+
+def test_brain_handles_blank_message():
+    assert LocalBrain().respond(" ", []) == "Please say something and I'll respond."

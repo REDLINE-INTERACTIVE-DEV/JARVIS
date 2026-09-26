@@ -1,7 +1,4 @@
 """Shared JARVIS voice state vocabulary."""
-from enum import Enum
+from .state import VoiceState
 
-class VoiceState(str, Enum):
-    IDLE="idle"; LISTENING="listening"; THINKING="thinking"; SPEAKING="speaking"; ERROR="error"
-
-__all__=["VoiceState"]
+__all__ = ["VoiceState"]
