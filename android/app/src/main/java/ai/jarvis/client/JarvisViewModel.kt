@@ -53,12 +53,14 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             _state.value = _state.value.copy(error = "API endpoint must start with http:// or https://")
             return
         }
-        prefs.edit().putString("endpoint", endpoint).apply()
         _state.value = _state.value.copy(input = "", messages = _state.value.messages + ChatMessage(message, true), busy = true, error = null, listening = false)
         viewModelScope.launch(Dispatchers.IO) {
             val result = try { postWithRetry(endpoint, message) } catch (error: Exception) { Result.failure(error) }
             result.fold(
-                onSuccess = { answer -> _state.value = _state.value.copy(messages = _state.value.messages + ChatMessage(answer, false), busy = false, speakToken = _state.value.speakToken + 1, lastAssistantText = answer, connected = true) },
+                onSuccess = { (workingEndpoint, answer) ->
+                    prefs.edit().putString("endpoint", workingEndpoint).apply()
+                    _state.value = _state.value.copy(endpoint = workingEndpoint, messages = _state.value.messages + ChatMessage(answer, false), busy = false, speakToken = _state.value.speakToken + 1, lastAssistantText = answer, connected = true)
+                },
                 onFailure = { error ->
                     val detail = error.message ?: "unknown error"
                     _state.value = _state.value.copy(messages = _state.value.messages + ChatMessage("API error: " + detail, false), busy = false, error = detail, connected = false)
@@ -67,11 +69,16 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun postWithRetry(endpoint: String, message: String): Result<String> {
+    private fun candidateEndpoints(endpoint: String): List<String> =
+        if (endpoint == BuildConfig.DEFAULT_API_BASE_URL) listOf(endpoint, "http://127.0.0.1:8000").distinct() else listOf(endpoint)
+
+    private fun postWithRetry(endpoint: String, message: String): Result<Pair<String, String>> {
         var last: Exception = IllegalStateException("Connection failed")
-        repeat(3) { attempt ->
-            try { return postChat(endpoint, message) }
-            catch (error: Exception) { last = error; if (attempt < 2) Thread.sleep(500L * (attempt + 1)) }
+        for (candidate in candidateEndpoints(endpoint)) {
+            repeat(3) { attempt ->
+                try { return postChat(candidate, message).map { answer -> candidate to answer } }
+                catch (error: Exception) { last = error; if (attempt < 2) Thread.sleep(500L * (attempt + 1)) }
+            }
         }
         return Result.failure(last)
     }
@@ -80,11 +87,17 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         val endpoint = _state.value.endpoint.trim().trimEnd('/')
         if (!endpoint.startsWith("http://") && !endpoint.startsWith("https://")) { _state.value = _state.value.copy(connected = false, connectionChecking = false); return }
         _state.value = _state.value.copy(connectionChecking = true)
-        try {
-            val connection = (URL(endpoint + "/health").openConnection() as HttpURLConnection).apply { requestMethod = "GET"; connectTimeout = 5_000; readTimeout = 5_000 }
-            val status = try { connection.responseCode } finally { connection.disconnect() }
-            _state.value = _state.value.copy(connected = status in 200..299, connectionChecking = false)
-        } catch (_: Exception) { _state.value = _state.value.copy(connected = false, connectionChecking = false) }
+        for (candidate in candidateEndpoints(endpoint)) {
+            try {
+                val connection = (URL(candidate + "/health").openConnection() as HttpURLConnection).apply { requestMethod = "GET"; connectTimeout = 5_000; readTimeout = 5_000 }
+                val status = try { connection.responseCode } finally { connection.disconnect() }
+                if (status in 200..299) {
+                    _state.value = _state.value.copy(endpoint = candidate, connected = true, connectionChecking = false)
+                    return
+                }
+            } catch (_: Exception) { }
+        }
+        _state.value = _state.value.copy(connected = false, connectionChecking = false)
     }
 
     private fun postChat(endpoint: String, message: String): Result<String> {
