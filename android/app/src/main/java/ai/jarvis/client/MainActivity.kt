@@ -174,6 +174,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         )
         val active = listening || speaking || thinking
 
+        val primaryColor = MaterialTheme.colorScheme.primary
+
         Canvas(
             Modifier.fillMaxWidth().height(180.dp)
         ) {
@@ -183,7 +185,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             val ring = Stroke(width = 4f, cap = StrokeCap.Round)
 
             drawCircle(
-                color = MaterialTheme.colorScheme.primary,
+                color = primaryColor,
                 center = center,
                 radius = radius,
                 style = ring,
@@ -208,7 +210,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     center.y + sin(angle).toFloat() * outer,
                 )
                 drawLine(
-                    color = MaterialTheme.colorScheme.primary,
+                    color = primaryColor,
                     start = start,
                     end = end,
                     strokeWidth = if (active) 4f else 2f,
@@ -226,7 +228,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }
             drawPath(
                 path = path,
-                color = MaterialTheme.colorScheme.primary,
+                color = primaryColor,
                 style = Stroke(width = 3f, cap = StrokeCap.Round),
             )
         }
