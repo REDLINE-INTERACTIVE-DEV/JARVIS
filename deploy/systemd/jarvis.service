@@ -1,0 +1,17 @@
+[Unit]
+Description=JARVIS 24/7 AI service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/jarvis
+Environment=PYTHONPATH=/opt/jarvis/backend
+Environment=JARVIS_STATE_PATH=/opt/jarvis/data/jarvis-service.json
+ExecStart=/opt/jarvis/.venv/bin/python /opt/jarvis/backend/run_jarvis.py
+Restart=always
+RestartSec=3
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
