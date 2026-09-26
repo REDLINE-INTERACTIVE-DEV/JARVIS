@@ -25,6 +25,7 @@ import java.util.Locale
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val viewModel: JarvisViewModel by viewModels()
     private var tts: TextToSpeech? = null
+    private var recognizer: SpeechRecognizer? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,7 +47,6 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private fun JarvisApp(vm: JarvisViewModel) {
         val state by vm.state.collectAsState()
         val context = LocalContext.current
-        var recognizer by remember { mutableStateOf<SpeechRecognizer?>(null) }
 
         val permissionLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.RequestPermission()
