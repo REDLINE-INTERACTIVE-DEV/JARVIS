@@ -1,32 +1,52 @@
 name: JARVIS CI
-on: [push,pull_request]
+
+on:
+  push:
+  pull_request:
+
 jobs:
- backend:
-  runs-on: ubuntu-latest
-  steps:
-   - uses: actions/checkout@v4
-   - uses: actions/setup-python@v5
-     with: {python-version: "3.12"}
-   - run: pip install -r backend/requirements.txt
-   - run: PYTHONPATH=. pytest -q backend/tests
- android:
-  runs-on: ubuntu-latest
-  steps:
-   - uses: actions/checkout@v4
-   - uses: actions/setup-java@v4
-     with: {distribution: "temurin", java-version: "17"}
-   - uses: android-actions/setup-android@v3
-   - uses: gradle/actions/setup-gradle@v4
-   - run: gradle -p android :app:assembleDebug
-   - uses: actions/upload-artifact@v4
-     with: {name: jarvis-debug-apk,path: android/app/build/outputs/apk/debug/*.apk}
- desktop:
-  runs-on: ubuntu-latest
-  steps:
-   - uses: actions/checkout@v4
-   - uses: actions/setup-python@v5
-     with: {python-version: "3.12"}
-   - run: pip install -r desktop/requirements.txt
-   - run: pyinstaller --onefile --name jarvis-desktop desktop/main.py
-   - uses: actions/upload-artifact@v4
-     with: {name: jarvis-desktop,path: dist/jarvis-desktop}
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: python -m pip install -r backend/requirements.txt
+      - run: PYTHONPATH=. python -m pytest -q backend/tests
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: "temurin", java-version: "17"}
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: gradle -p android :app:assembleDebug
+      - run: |
+          mkdir -p artifacts
+          cp android/app/build/outputs/apk/debug/app-debug.apk artifacts/JARVIS-Android-debug-v0.2.0.apk
+      - uses: actions/upload-artifact@v4
+        with: {name: jarvis-android-apk, path: artifacts/JARVIS-Android-debug-v0.2.0.apk}
+
+  desktop-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: python -m pip install -r desktop/requirements.txt
+      - run: pyinstaller --onefile --name jarvis-desktop desktop/main.py
+      - uses: actions/upload-artifact@v4
+        with: {name: jarvis-desktop-linux, path: dist/jarvis-desktop}
+
+  desktop-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: python -m pip install -r desktop/requirements.txt
+      - run: pyinstaller --onefile --windowed --name JARVIS desktop/main.py
+      - uses: actions/upload-artifact@v4
+        with: {name: jarvis-desktop-windows, path: dist/JARVIS.exe}
