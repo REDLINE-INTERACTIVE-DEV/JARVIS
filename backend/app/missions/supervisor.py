@@ -10,7 +10,8 @@ from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
 from ..reasoning import ReasoningEngine
-from ..robots import RobotFleetCoordinator, RobotJob, RobotState
+from ..robots import RobotFleetCoordinator, RobotJob
+from ..robots.coordinator import RobotState
 
 
 @dataclass(frozen=True)
