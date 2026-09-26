@@ -109,14 +109,6 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     thinking = state.busy && !state.listening && !state.speaking,
                 )
 
-                OutlinedTextField(
-                    value = state.endpoint,
-                    onValueChange = vm::setEndpoint,
-                    label = { Text("API endpoint") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
                 LazyColumn(
                     Modifier.weight(1f).fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
