@@ -13,7 +13,7 @@ from .voice import VoiceState
 
 
 def create_app(memory=None, brain=None, tools=None, research=None):
-    app = FastAPI(title="JARVIS Local API", version="0.7.1")
+    app = FastAPI(title="JARVIS Local API", version="0.8.0")
     memory = memory or MemoryStore()
     brain = brain or BrainRuntime()
     tools = tools or ToolRegistry()
@@ -167,6 +167,7 @@ def create_app(memory=None, brain=None, tools=None, research=None):
             "objective": report.objective,
             "verified": report.verified,
             "failed_robots": report.failed_robots,
+            "telemetry_issues": report.telemetry_issues,
             "robots": report.results,
         }
 
