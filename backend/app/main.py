@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-from .brain import LocalBrain
+from .brain import BrainRuntime, LocalBrain
 from .memory import MemoryStore
 from .research import ResearchEngine
+from .robots import RobotFleetCoordinator, RobotJob
 from .tasks import TaskEngine
 from .tools import ToolRegistry
 from .voice import VoiceState
@@ -11,16 +12,30 @@ from .voice import VoiceState
 
 def create_app(
     memory: MemoryStore | None = None,
-    brain: LocalBrain | None = None,
+    brain: LocalBrain | BrainRuntime | None = None,
     tools: ToolRegistry | None = None,
     research: ResearchEngine | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="JARVIS Local API", version="0.4.0")
+    app = FastAPI(title="JARVIS Local API", version="0.5.0")
     memory = memory or MemoryStore()
-    brain = brain or LocalBrain()
+    brain = brain or BrainRuntime()
     tools = tools or ToolRegistry()
     research = research or ResearchEngine()
     tasks = TaskEngine(tools.call)
+
+    async def answer(message: str) -> str:
+        if isinstance(brain, BrainRuntime):
+            return await brain.respond(message, memory.recent(20))
+        return brain.respond(message, memory.recent(20))
+
+    async def research_answer(
+        message: str, results: list[dict[str, str]]
+    ) -> str:
+        if isinstance(brain, BrainRuntime):
+            return await brain.answer_with_research(
+                message, memory.recent(20), results
+            )
+        return brain.answer_with_research(message, memory.recent(20), results)
 
     class ChatRequest(BaseModel):
         message: str = Field(min_length=1, max_length=10_000)
@@ -42,20 +57,38 @@ def create_app(
         message: str = Field(min_length=1, max_length=10_000)
         confirmed: bool = False
 
+    class RobotJobRequest(BaseModel):
+        robot_id: str = Field(min_length=1, max_length=100)
+        command: str = Field(min_length=1, max_length=2_000)
+
+    class RobotDispatchRequest(BaseModel):
+        jobs: list[RobotJobRequest] = Field(min_length=1, max_length=128)
+
     @app.get("/health")
-    def health():
+    async def health():
+        if isinstance(brain, BrainRuntime):
+            stats = brain.stats()
+            return {
+                "status": "ok",
+                "brain": stats.provider,
+                "brain_concurrency": stats.max_concurrency,
+                "brain_requests": stats.requests,
+                "brain_failures": stats.failures,
+                "research": "duckduckgo-html",
+            }
         return {
             "status": "ok",
             "brain": brain.provider,
+            "brain_concurrency": 1,
             "research": "duckduckgo-html",
         }
 
     @app.get("/voice/states")
-    def voice_states():
+    async def voice_states():
         return {"states": [state.value for state in VoiceState]}
 
     @app.post("/chat")
-    def chat(req: ChatRequest):
+    async def chat(req: ChatRequest):
         message = req.message.strip()
         memory.add("user", message)
 
@@ -63,43 +96,60 @@ def create_app(
             query = research.clean_query(message)
             try:
                 results = [item.as_dict() for item in research.search(query)]
-                answer = brain.answer_with_research(message, memory.recent(20), results)
+                answer_text = await research_answer(message, results)
                 memory.add("research", query)
-                memory.add("assistant", answer)
-                return {"response": answer, "searched": True, "results": results}
+                memory.add("assistant", answer_text)
+                return {
+                    "response": answer_text,
+                    "searched": True,
+                    "results": results,
+                }
             except Exception as exc:
-                answer = f"I couldn't complete the web search: {exc}"
-                memory.add("assistant", answer)
-                return {"response": answer, "searched": True, "results": []}
+                answer_text = f"I couldn't complete the web search: {exc}"
+                memory.add("assistant", answer_text)
+                return {"response": answer_text, "searched": True, "results": []}
 
-        answer = brain.respond(message, memory.recent(20))
-        memory.add("assistant", answer)
-        return {"response": answer, "searched": False, "results": []}
+        answer_text = await answer(message)
+        memory.add("assistant", answer_text)
+        return {"response": answer_text, "searched": False, "results": []}
 
     @app.post("/search")
-    def search(req: SearchRequest):
+    async def search(req: SearchRequest):
         results = [item.as_dict() for item in research.search(req.query, req.limit)]
         return {"query": req.query, "results": results}
 
     @app.get("/memory")
-    def get_memory(limit: int = 20):
+    async def get_memory(limit: int = 20):
         return {"items": memory.recent(limit)}
 
     @app.post("/memory")
-    def add_memory(req: MemoryRequest):
+    async def add_memory(req: MemoryRequest):
         return {"id": memory.add(req.kind, req.content)}
 
     @app.post("/tools/call")
-    def call_tool(req: ToolRequest):
+    async def call_tool(req: ToolRequest):
         return tools.call(req.name, req.arguments, req.confirmed)
 
     @app.post("/tasks")
-    def run_task(req: TaskRequest):
+    async def run_task(req: TaskRequest):
         return tasks.run(
             req.message,
-            responder=lambda m: brain.respond(m, memory.recent(20)),
+            responder=lambda m: brain.brain.respond(m, memory.recent(20))
+            if isinstance(brain, BrainRuntime)
+            else brain.respond(m, memory.recent(20)),
             confirmed=req.confirmed,
         )
+
+    async def robot_worker(job: RobotJob) -> str:
+        # Logical coordination only. No physical actuator is invoked here.
+        return await answer(f"Robot {job.robot_id} job: {job.command}")
+
+    fleet = RobotFleetCoordinator(robot_worker, max_concurrency=32)
+
+    @app.post("/robots/dispatch")
+    async def dispatch_robots(req: RobotDispatchRequest):
+        jobs = [RobotJob(item.robot_id, item.command) for item in req.jobs]
+        return {"robots": await fleet.dispatch(jobs)}
 
     return app
 
