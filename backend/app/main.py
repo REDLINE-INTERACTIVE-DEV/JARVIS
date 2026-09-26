@@ -1,5 +1,5 @@
 import asyncio
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel, Field
 from .brain import BrainRuntime, LocalBrain
 from .memory import MemoryStore
@@ -10,6 +10,7 @@ from .missions import MissionSupervisor
 from .tasks import TaskEngine
 from .tools import ToolRegistry
 from .voice import VoiceState
+from .screen import ScreenBridge
 
 
 def create_app(memory=None, brain=None, tools=None, research=None):
@@ -20,6 +21,7 @@ def create_app(memory=None, brain=None, tools=None, research=None):
     research = research or ResearchEngine()
     reasoning = ReasoningEngine(16)
     tasks = TaskEngine(tools.call)
+    screen = ScreenBridge()
 
     async def answer(message):
         if isinstance(brain, BrainRuntime):
@@ -65,6 +67,16 @@ def create_app(memory=None, brain=None, tools=None, research=None):
     class RobotMissionRequest(BaseModel):
         objective: str = Field(min_length=1, max_length=2000)
         jobs: list[RobotJobRequest] = Field(min_length=1, max_length=5)
+
+    class ScreenRegisterRequest(BaseModel):
+        device_id: str = Field(min_length=1, max_length=100)
+        platform: str = Field(min_length=1, max_length=20)
+        width: int = Field(default=0, ge=0, le=20000)
+        height: int = Field(default=0, ge=0, le=20000)
+
+    class ScreenActionRequest(BaseModel):
+        action: str = Field(min_length=1, max_length=30)
+        arguments: dict[str, object] = Field(default_factory=dict)
 
     @app.get("/health")
     async def health():
@@ -137,6 +149,38 @@ def create_app(memory=None, brain=None, tools=None, research=None):
 
     fleet = RobotFleetCoordinator(robot_worker, reasoning=reasoning)
     mission = MissionSupervisor(robot_worker, reasoning=reasoning, fleet=fleet)
+
+    @app.get("/screen/devices")
+    async def screen_devices():
+        return {"devices": [device.as_dict() for device in screen.devices()]}
+
+    @app.post("/screen/register")
+    async def register_screen(req: ScreenRegisterRequest):
+        try: return screen.register(req.device_id, req.platform, req.width, req.height).as_dict()
+        except ValueError as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/screen/frame/{device_id}")
+    async def upload_screen_frame(device_id: str, body: bytes, content_type: str | None = Header(default=None), width: int = 0, height: int = 0):
+        try: frame=screen.store_frame(device_id, body, content_type or "image/jpeg", width, height)
+        except (KeyError, ValueError) as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"device_id": frame.device_id, "width": frame.width, "height": frame.height, "captured_at": frame.captured_at}
+
+    @app.get("/screen/latest/{device_id}")
+    async def latest_screen(device_id: str):
+        from fastapi.responses import Response
+        try: frame=screen.latest_frame(device_id)
+        except KeyError as exc: raise HTTPException(status_code=404, detail="no screen frame available") from exc
+        return Response(content=frame.content, media_type=frame.content_type)
+
+    @app.post("/screen/actions/{device_id}")
+    async def queue_screen_action(device_id: str, req: ScreenActionRequest):
+        try: return screen.queue_action(device_id, req.action, req.arguments).as_dict()
+        except (KeyError, ValueError) as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/screen/actions/{device_id}")
+    async def get_screen_actions(device_id: str, limit: int = 10):
+        try: return {"actions": [item.as_dict() for item in screen.take_actions(device_id, limit)]}
+        except KeyError as exc: raise HTTPException(status_code=404, detail="screen device is not registered") from exc
 
     @app.get("/robots/states")
     async def robot_states():
