@@ -4,9 +4,11 @@ from .brain import LocalBrain
 from .memory import MemoryStore
 from .tasks import TaskEngine
 from .tools import ToolRegistry
+from .voice import VoiceState
+
 
 def create_app(memory: MemoryStore | None = None, brain: LocalBrain | None = None, tools: ToolRegistry | None = None) -> FastAPI:
-    app = FastAPI(title="JARVIS Local API", version="0.2.0")
+    app = FastAPI(title="JARVIS Local API", version="0.3.0")
     memory = memory or MemoryStore()
     brain = brain or LocalBrain()
     tools = tools or ToolRegistry()
@@ -31,6 +33,10 @@ def create_app(memory: MemoryStore | None = None, brain: LocalBrain | None = Non
     @app.get("/health")
     def health():
         return {"status": "ok", "brain": brain.provider}
+
+    @app.get("/voice/states")
+    def voice_states():
+        return {"states": [state.value for state in VoiceState]}
 
     @app.post("/chat")
     def chat(req: ChatRequest):
@@ -57,5 +63,6 @@ def create_app(memory: MemoryStore | None = None, brain: LocalBrain | None = Non
         return tasks.run(req.message, responder=lambda m: brain.respond(m, memory.recent(20)), confirmed=req.confirmed)
 
     return app
+
 
 app = create_app()
