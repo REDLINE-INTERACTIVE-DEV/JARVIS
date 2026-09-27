@@ -6,8 +6,10 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
+import androidx.core.content.ContextCompat
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -28,6 +30,11 @@ class WakeWordService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            broadcast(ACTION_PERMISSION_REQUIRED)
+            stopSelf()
+            return
+        }
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, notification())
         val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
@@ -42,6 +49,16 @@ class WakeWordService : Service() {
             stopListening()
             stopSelf()
             return START_NOT_STICKY
+        }
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            stopListening()
+            broadcast(ACTION_PERMISSION_REQUIRED)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_LISTEN_FOR_COMMAND) {
+            awaitingCommand = true
+            broadcast(ACTION_COMMAND)
         }
         startListening()
         return START_STICKY
@@ -62,7 +79,15 @@ class WakeWordService : Service() {
                     val phrase = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
                     handlePhrase(phrase)
                 }
-                override fun onError(error: Int) { listening = false; scheduleRestart() }
+                override fun onError(error: Int) {
+                    listening = false
+                    if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                        broadcast(ACTION_PERMISSION_REQUIRED)
+                        stopSelf()
+                    } else {
+                        scheduleRestart()
+                    }
+                }
                 override fun onReadyForSpeech(params: android.os.Bundle?) {}
                 override fun onBeginningOfSpeech() {}
                 override fun onRmsChanged(rmsdB: Float) {}
@@ -285,6 +310,8 @@ class WakeWordService : Service() {
         const val ACTION_COMMAND = "ai.jarvis.client.ACTION_WAKE_COMMAND"
         const val ACTION_INITIATING = "ai.jarvis.client.ACTION_WAKE_INITIATING"
         const val ACTION_RESPONSE = "ai.jarvis.client.ACTION_WAKE_RESPONSE"
+        const val ACTION_PERMISSION_REQUIRED = "ai.jarvis.client.ACTION_MIC_PERMISSION_REQUIRED"
+        const val ACTION_LISTEN_FOR_COMMAND = "ai.jarvis.client.ACTION_LISTEN_FOR_COMMAND"
         const val ACTION_STOP = "ai.jarvis.client.ACTION_STOP_WAKE"
         const val EXTRA_COMMAND = "command"
         const val EXTRA_RESPONSE = "response"
@@ -294,6 +321,12 @@ class WakeWordService : Service() {
 
         fun start(context: Context) {
             val intent = Intent(context, WakeWordService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
+            else context.startService(intent)
+        }
+
+        fun startInteractiveListening(context: Context) {
+            val intent = Intent(context, WakeWordService::class.java).setAction(ACTION_LISTEN_FOR_COMMAND)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
             else context.startService(intent)
         }

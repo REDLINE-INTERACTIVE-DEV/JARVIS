@@ -8,13 +8,10 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
 import android.content.pm.PackageManager
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -49,7 +46,6 @@ import kotlin.math.sin
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val viewModel: JarvisViewModel by viewModels()
     private var tts: TextToSpeech? = null
-    private var recognizer: SpeechRecognizer? = null
 
     private val microphonePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -62,6 +58,11 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             when (intent?.action) {
                 WakeWordService.ACTION_COMMAND -> viewModel.setListening(true)
                 WakeWordService.ACTION_INITIATING -> viewModel.setInitiating()
+                WakeWordService.ACTION_PERMISSION_REQUIRED -> {
+                    if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                        microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                }
                 WakeWordService.ACTION_RESPONSE -> {
                     viewModel.receiveExternalResponse(
                         intent.getStringExtra(WakeWordService.EXTRA_COMMAND).orEmpty(),
@@ -89,6 +90,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             addAction(WakeWordService.ACTION_COMMAND)
             addAction(WakeWordService.ACTION_INITIATING)
             addAction(WakeWordService.ACTION_RESPONSE)
+            addAction(WakeWordService.ACTION_PERMISSION_REQUIRED)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(wakeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -124,21 +126,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val state by vm.state.collectAsState()
         val context = LocalContext.current
 
-        val permissionLauncher = rememberLauncherForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) { granted ->
-            if (granted) startListening(context) else vm.setListening(false)
-        }
-
         LaunchedEffect(state.speakToken) {
             if (state.speakToken > 0) state.lastAssistantText?.let { speak(it) }
-        }
-
-        DisposableEffect(Unit) {
-            onDispose {
-                recognizer?.destroy()
-                recognizer = null
-            }
         }
 
         MaterialTheme(
@@ -171,7 +160,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                         onClick = {
                             if (!state.busy) {
                                 if (SpeechRecognizer.isRecognitionAvailable(context)) {
-                                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                    WakeWordService.startInteractiveListening(context)
                                 } else {
                                     vm.setListening(false)
                                     vm.setError("Speech recognition is not available on this device.")
@@ -443,37 +432,6 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 2.6.sp,
             )
-        }
-    }
-
-    private fun startListening(context: Context) {
-        recognizer?.destroy()
-        viewModel.setListening(true)
-        recognizer = SpeechRecognizer.createSpeechRecognizer(context).also { sr ->
-            sr.setRecognitionListener(object : RecognitionListener {
-                override fun onResults(results: Bundle?) {
-                    viewModel.setListening(false)
-                    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let {
-                        viewModel.setInput(it)
-                        viewModel.send()
-                    }
-                    sr.destroy()
-                }
-                override fun onError(error: Int) { viewModel.setListening(false); sr.destroy() }
-                override fun onReadyForSpeech(params: Bundle?) {}
-                override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(rmsdB: Float) {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() {}
-                override fun onPartialResults(partialResults: Bundle?) {}
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-            }
-            sr.startListening(intent)
         }
     }
 
