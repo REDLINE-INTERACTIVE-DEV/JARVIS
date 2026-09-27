@@ -117,7 +117,26 @@ def create_app(memory=None, brain=None, tools=None, research=None):
 
     @app.post("/events")
     async def add_event(req: EventRequest):
-        return memory.add_event(req.source_device, req.event_type, req.title, req.content, req.external_id, req.created_at)
+        return memory.add_event(req.source_device, req.event_type, req.title, req.content, req.external_id, req.created_at, req.provider, req.account_id, req.version)
+
+    @app.post("/sync/push")
+    async def sync_push(req: SyncPushRequest):
+        events = [memory.add_event(req.device_id, e.event_type, e.title, e.content, e.external_id, e.created_at, e.provider, e.account_id, e.version) for e in req.events]
+        return {"accepted": len(events), "events": events}
+
+    @app.get("/sync/pull")
+    async def sync_pull(cursor: int = 0, limit: int = 100):
+        events = memory.events_after(cursor, limit)
+        next_cursor = events[-1]["id"] if events else cursor
+        return {"events": events, "next_cursor": next_cursor, "has_more": len(events) == min(max(1, limit), 500)}
+
+    @app.get("/sync/cursor")
+    async def sync_cursor(provider: str, account_id: str = ""):
+        return {"provider": provider, "account_id": account_id, "cursor": memory.get_cursor(provider, account_id)}
+
+    @app.post("/sync/cursor")
+    async def update_sync_cursor(req: SyncCursorRequest):
+        return {"provider": req.provider, "account_id": req.account_id, "cursor": memory.set_cursor(req.provider, req.account_id, req.cursor)}
 
     @app.get("/events/pending")
     async def pending_events(limit: int = 100):
