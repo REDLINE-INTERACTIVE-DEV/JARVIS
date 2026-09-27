@@ -24,11 +24,17 @@ class WakeWordService : Service() {
     private var recognizer: SpeechRecognizer? = null
     private var awaitingCommand = false
     private var listening = false
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, notification())
+        val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        wakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "JARVIS:WakeWord").apply {
+            setReferenceCounted(false)
+            acquire()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -45,7 +51,7 @@ class WakeWordService : Service() {
         if (listening || !SpeechRecognizer.isRecognitionAvailable(this)) return
         listening = true
         recognizer?.destroy()
-        recognizer = SpeechRecognizer.createSpeechRecognizer(this).also { sr ->
+        recognizer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {\n            SpeechRecognizer.createOnDeviceSpeechRecognizer(this)\n        } else {\n            SpeechRecognizer.createSpeechRecognizer(this)\n        }.also { sr ->
             sr.setRecognitionListener(object : RecognitionListener {
                 override fun onResults(results: android.os.Bundle?) {
                     listening = false
@@ -72,12 +78,11 @@ class WakeWordService : Service() {
     }
 
     private fun handlePhrase(raw: String) {
-        val phrase = raw.trim()
-        val lower = phrase.lowercase(Locale.getDefault())
-        val wakeIndex = lower.indexOf("jarvis")
+        val phrase = raw.trim().replace(Regex("\\s+"), " ")
+        val wakeMatch = Regex("^\\s*(?:hey\\s+)?jarvis(?:\\b|[,.:;!?-])(.*)$", RegexOption.IGNORE_CASE).matchEntire(phrase)
 
-        if (wakeIndex >= 0) {
-            val afterWake = phrase.substring(wakeIndex + "jarvis".length).trimStart(',', '.', ':', ';', '-', ' ')
+        if (wakeMatch != null) {
+            val afterWake = wakeMatch.groupValues.getOrNull(1).orEmpty().trimStart(',', '.', ':', ';', '-', ' ')
             broadcast(ACTION_COMMAND)
             if (afterWake.isNotBlank()) {
                 awaitingCommand = false
@@ -225,6 +230,8 @@ class WakeWordService : Service() {
         listening = false
         recognizer?.destroy()
         recognizer = null
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
     }
 
     private fun createNotificationChannel() {
