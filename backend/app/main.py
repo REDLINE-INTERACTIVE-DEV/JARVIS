@@ -45,6 +45,9 @@ def create_app(memory=None, brain=None, tools=None, research=None):
         content: str = Field(min_length=1, max_length=20000)
         external_id: str = Field(default="", max_length=500)
         created_at: str | None = None
+        provider: str = Field(default="local", max_length=100)
+        account_id: str = Field(default="", max_length=300)
+        version: str = Field(default="", max_length=200)
 
     class SyncPushRequest(BaseModel):
         device_id: str = Field(min_length=1, max_length=200)
