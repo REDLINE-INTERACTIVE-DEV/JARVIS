@@ -11,7 +11,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.net.HttpURLConnection
+import java.net.Inet4Address
+import java.net.NetworkInterface
 import java.net.URL
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutorCompletionService
+import java.util.concurrent.Executors
 
 data class ChatMessage(val text: String, val fromUser: Boolean)
 data class JarvisUiState(
@@ -69,8 +74,83 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun candidateEndpoints(endpoint: String): List<String> =
-        if (endpoint == BuildConfig.DEFAULT_API_BASE_URL) listOf(endpoint, "http://127.0.0.1:8000").distinct() else listOf(endpoint)
+    private fun candidateEndpoints(endpoint: String): List<String> {
+        val normalized = endpoint.trim().trimEnd('/')
+        val candidates = linkedSetOf(normalized)
+        if (normalized == BuildConfig.DEFAULT_API_BASE_URL) {
+            candidates += "http://127.0.0.1:8000"
+            discoverLanEndpoint()?.let { candidates += it }
+        }
+        return candidates.toList()
+    }
+
+    private fun discoverLanEndpoint(): String? {
+        val hosts = linkedSetOf<String>()
+        try {
+            val interfaces = NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
+            for (networkInterface in interfaces) {
+                if (!networkInterface.isUp || networkInterface.isLoopback) continue
+                for (address in networkInterface.interfaceAddresses) {
+                    val ipv4 = address.address as? Inet4Address ?: continue
+                    if (!ipv4.isSiteLocalAddress) continue
+                    val prefix = address.networkPrefixLength.toInt()
+                    if (prefix !in 1..32) continue
+                    val scanPrefix = maxOf(prefix, 24)
+                    val bytes = ipv4.address
+                    val ip = ((bytes[0].toInt() and 0xff) shl 24) or
+                        ((bytes[1].toInt() and 0xff) shl 16) or
+                        ((bytes[2].toInt() and 0xff) shl 8) or
+                        (bytes[3].toInt() and 0xff)
+                    val mask = if (scanPrefix == 32) -1 else (-1 shl (32 - scanPrefix))
+                    val network = ip and mask
+                    val hostCount = 1 shl (32 - scanPrefix)
+                    for (offset in 1 until hostCount - 1) {
+                        val candidate = network + offset
+                        hosts += (candidate shr 24 and 0xff).toString() + "." +
+                            (candidate shr 16 and 0xff).toString() + "." +
+                            (candidate shr 8 and 0xff).toString() + "." +
+                            (candidate and 0xff).toString()
+                        if (hosts.size >= 254) break
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            return null
+        }
+        if (hosts.isEmpty()) return null
+
+        val executor = Executors.newFixedThreadPool(32)
+        val completion = ExecutorCompletionService<String?>(executor)
+        val futures = hosts.map { host ->
+            completion.submit(Callable {
+                try {
+                    val connection = (URL("http://" + host + ":8000/health").openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"
+                        connectTimeout = 300
+                        readTimeout = 500
+                    }
+                    try {
+                        if (connection.responseCode in 200..299) "http://" + host + ":8000" else null
+                    } finally {
+                        connection.disconnect()
+                    }
+                } catch (_: Exception) {
+                    null
+                }
+            })
+        }
+        return try {
+            repeat(futures.size) {
+                val found = completion.take().get()
+                if (found != null) return found
+            }
+            null
+        } catch (_: Exception) {
+            null
+        } finally {
+            executor.shutdownNow()
+        }
+    }
 
     private fun postWithRetry(endpoint: String, message: String): Result<Pair<String, String>> {
         var last: Exception = IllegalStateException("Connection failed")
