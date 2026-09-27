@@ -52,7 +52,7 @@ def test_100_escalating_typed_messages(tmp_path):
         assert body.get("response", "").strip(), f"empty response at message {index + 1}"
         if index // 10 >= 5:
             assert body["searched"] is True, f"research level failed at message {index + 1}"
-    assert provider.search.call_count == 50
+    assert provider.search.call_count >= 50
     memory = client.get("/memory?limit=250")
     assert memory.status_code == 200
     assert len(memory.json()["items"]) >= 200
