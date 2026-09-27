@@ -14,7 +14,7 @@ from .screen import ScreenBridge
 from .device_registry import DeviceRegistry
 
 def create_app(memory=None, brain=None, tools=None, research=None):
-    app = FastAPI(title="JARVIS Local API", version="0.10.0")
+    app = FastAPI(title="JARVIS Local API", version="0.11.0")
     memory = memory or MemoryStore()
     brain = brain or BrainRuntime()
     tools = tools or ToolRegistry()
@@ -24,15 +24,23 @@ def create_app(memory=None, brain=None, tools=None, research=None):
     screen = ScreenBridge()
     devices = DeviceRegistry()
 
+    def device_id(value: str | None) -> str:
+        return (value or "unknown-device").strip()[:200]
+
+    def context_for(message: str):
+        # SQLite remains the source of truth for the complete history.
+        # Give the brain a large, bounded context while retaining the full archive.
+        return memory.recent(100)
+
     async def answer(message):
         if isinstance(brain, BrainRuntime):
-            return await brain.respond(message, memory.recent(20))
-        return brain.respond(message, memory.recent(20))
+            return await brain.respond(message, context_for(message))
+        return brain.respond(message, context_for(message))
 
     async def research_answer(message, results):
         if isinstance(brain, BrainRuntime):
-            return await brain.answer_with_research(message, memory.recent(20), results)
-        return brain.answer_with_research(message, memory.recent(20), results)
+            return await brain.answer_with_research(message, context_for(message), results)
+        return brain.answer_with_research(message, context_for(message), results)
 
     class ChatRequest(BaseModel):
         message: str = Field(min_length=1, max_length=10000)
@@ -104,7 +112,7 @@ def create_app(memory=None, brain=None, tools=None, research=None):
 
     @app.get("/health")
     async def health():
-        data = {"status":"ok","brain":brain.provider,"brain_concurrency":1,"reasoning_concurrency":reasoning.max_concurrency,"robot_capacity":5,"research":"duckduckgo-html"}
+        data = {"status":"ok","brain":brain.provider,"brain_concurrency":1,"reasoning_concurrency":reasoning.max_concurrency,"robot_capacity":5,"research":"duckduckgo-html","memory":"sqlite"}
         if isinstance(brain, BrainRuntime):
             s = brain.stats()
             data.update(brain=s.provider, brain_concurrency=s.max_concurrency, brain_requests=s.requests, brain_failures=s.failures)
@@ -115,33 +123,34 @@ def create_app(memory=None, brain=None, tools=None, research=None):
         return {"states":[s.value for s in VoiceState]}
 
     @app.post("/chat")
-    async def chat(req: ChatRequest):
+    async def chat(req: ChatRequest, x_jarvis_device: str | None = Header(default=None)):
+        source = device_id(x_jarvis_device)
         message=req.message.strip()
-        memory.add("user",message)
+        memory.add(f"user:{source}", message)
         if research.should_search(message):
             query=research.clean_query(message)
             try:
                 results=[x.as_dict() for x in research.search(query)]
                 out=await research_answer(message,results)
-                memory.add("research",query); memory.add("assistant",out)
+                memory.add(f"research:{source}",query); memory.add(f"assistant:{source}",out)
                 return {"response":out,"searched":True,"results":results}
             except Exception as exc:
                 out=f"I couldn't complete the web search: {exc}"
-                memory.add("assistant",out)
+                memory.add(f"assistant:{source}",out)
                 return {"response":out,"searched":True,"results":[]}
-        out=await answer(message); memory.add("assistant",out)
+        out=await answer(message); memory.add(f"assistant:{source}",out)
         return {"response":out,"searched":False,"results":[]}
 
     @app.post("/chat/multitask")
-    async def chat_multitask(req: MultiTaskRequest):
+    async def chat_multitask(req: MultiTaskRequest, x_jarvis_device: str | None = Header(default=None)):
+        source = device_id(x_jarvis_device)
+        memory.add(f"user:{source}", req.message)
         if not isinstance(brain, BrainRuntime):
-            out = brain.respond(req.message, memory.recent(20))
-            memory.add("user", req.message)
-            memory.add("assistant", out)
+            out = brain.respond(req.message, context_for(req.message))
+            memory.add(f"assistant:{source}", out)
             return {"results": [{"goal_id": "1", "goal": req.message, "status": "completed", "result": out}]}
-        memory.add("user", req.message)
-        results = await brain.multitask(req.message, memory.recent(20))
-        memory.add("assistant", "; ".join(x["result"] for x in results))
+        results = await brain.multitask(req.message, context_for(req.message))
+        memory.add(f"assistant:{source}", "; ".join(x["result"] for x in results))
         return {"results": results}
 
     @app.post("/events")
@@ -173,13 +182,12 @@ def create_app(memory=None, brain=None, tools=None, research=None):
 
     @app.post("/briefing/morning")
     async def morning_briefing(limit: int = 100):
-        events = memory.pending_events(limit)
+        events = memory.claim_pending_events(limit)
         if not events:
             return {"response":"There is nothing new to report.", "event_count":0, "event_ids":[]}
         lines=[f"{e['event_type']}: {e['title']} — {e['content']}" for e in events]
         response="Good morning. Here is your new JARVIS briefing:\n" + "\n".join(lines)
-        marked=memory.mark_events_reported([e["id"] for e in events])
-        return {"response":response,"event_count":marked,"event_ids":[e["id"] for e in events]}
+        return {"response":response,"event_count":len(events),"event_ids":[e["id"] for e in events]}
 
     @app.post("/search")
     async def search(req: SearchRequest):
@@ -187,7 +195,7 @@ def create_app(memory=None, brain=None, tools=None, research=None):
         return {"query": req.query, "results": results}
 
     @app.get("/memory")
-    async def get_memory(limit:int=20):
+    async def get_memory(limit:int=200):
         return {"items":memory.recent(limit)}
 
     @app.post("/memory")
@@ -199,9 +207,13 @@ def create_app(memory=None, brain=None, tools=None, research=None):
         return tools.call(req.name,req.arguments,req.confirmed)
 
     @app.post("/tasks")
-    async def run_task(req: TaskRequest):
+    async def run_task(req: TaskRequest, x_jarvis_device: str | None = Header(default=None)):
+        source = device_id(x_jarvis_device)
+        memory.add(f"task:user:{source}", req.message)
         async def responder(message): return await answer(message)
-        return await tasks.run_async(req.message,responder=responder,confirmed=req.confirmed)
+        result = await tasks.run_async(req.message,responder=responder,confirmed=req.confirmed)
+        memory.add(f"task:result:{source}", str(result))
+        return result
 
     async def robot_worker(job): return await answer(f"Robot {job.robot_id} job: {job.command}")
     fleet=RobotFleetCoordinator(robot_worker,reasoning=reasoning); mission=MissionSupervisor(robot_worker,reasoning=reasoning,fleet=fleet)
@@ -212,14 +224,11 @@ def create_app(memory=None, brain=None, tools=None, research=None):
 
     @app.post("/devices/heartbeat/{device_id}")
     async def device_heartbeat(device_id: str):
-        try:
-            return devices.heartbeat(device_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="device is not registered") from exc
+        try:return devices.heartbeat(device_id)
+        except KeyError as exc:raise HTTPException(status_code=404, detail="device is not registered") from exc
 
     @app.get("/devices")
-    async def list_devices():
-        return {"devices": devices.list()}
+    async def list_devices(): return {"devices": devices.list()}
 
     @app.get("/screen/devices")
     async def screen_devices(): return {"devices":[device.as_dict() for device in screen.devices()]}

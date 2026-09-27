@@ -14,6 +14,7 @@ import java.net.HttpURLConnection
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.net.URL
+import java.util.UUID
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.Executors
@@ -35,6 +36,9 @@ data class JarvisUiState(
 
 class JarvisViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("jarvis", Context.MODE_PRIVATE)
+    private val deviceId = prefs.getString("device_id", null) ?: UUID.randomUUID().toString().also {
+        prefs.edit().putString("device_id", it).apply()
+    }
     private val _state = MutableStateFlow(JarvisUiState(endpoint = sanitizeSavedEndpoint()))
     val state: StateFlow<JarvisUiState> = _state.asStateFlow()
 
@@ -51,10 +55,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             saved.equals("127.0.0.1:8000", ignoreCase = true) ||
             saved.equals("http://127.0.0.1:8000", ignoreCase = true) ||
             saved.equals("http://localhost:8000", ignoreCase = true)
-        if (staleLoopback) {
-            prefs.edit().remove("endpoint").apply()
-            return BuildConfig.DEFAULT_API_BASE_URL
-        }
+        if (staleLoopback) { prefs.edit().remove("endpoint").apply(); return BuildConfig.DEFAULT_API_BASE_URL }
         return saved
     }
 
@@ -69,165 +70,114 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     fun receiveExternalResponse(command: String, answer: String) {
         val cleanCommand = command.trim()
         val cleanAnswer = answer.trim().ifBlank { "I didn't receive a response from the backend." }
-        val additions = buildList {
-            if (cleanCommand.isNotBlank()) add(ChatMessage(cleanCommand, true))
-            add(ChatMessage(cleanAnswer, false))
-        }
-        _state.value = _state.value.copy(
-            input = "",
-            messages = _state.value.messages + additions,
-            busy = false,
-            listening = false,
-            speakToken = _state.value.speakToken + 1,
-            lastAssistantText = cleanAnswer,
-            error = null,
-        )
+        val additions = buildList { if (cleanCommand.isNotBlank()) add(ChatMessage(cleanCommand, true)); add(ChatMessage(cleanAnswer, false)) }
+        _state.value = _state.value.copy(input="",messages=_state.value.messages+additions,busy=false,listening=false,speakToken=_state.value.speakToken+1,lastAssistantText=cleanAnswer,error=null,connected=true)
     }
 
     fun send() {
         val message = _state.value.input.trim()
         if (message.isEmpty() || _state.value.busy) return
         val endpoint = _state.value.endpoint.trim().trimEnd('/')
-        _state.value = _state.value.copy(input = "", messages = _state.value.messages + ChatMessage(message, true), busy = true, error = null, listening = false)
+        _state.value = _state.value.copy(input="",messages=_state.value.messages+ChatMessage(message,true),busy=true,error=null,listening=false)
         viewModelScope.launch(Dispatchers.IO) {
-            val result = try { postWithRetry(endpoint, message) } catch (error: Exception) { Result.failure(error) }
+            val result = try { postWithRetry(endpoint,message) } catch (error:Exception) { Result.failure(error) }
             result.fold(
-                onSuccess = { (workingEndpoint, answer) ->
-                    prefs.edit().putString("endpoint", workingEndpoint).apply()
-                    _state.value = _state.value.copy(endpoint = workingEndpoint, messages = _state.value.messages + ChatMessage(answer, false), busy = false, speakToken = _state.value.speakToken + 1, lastAssistantText = answer, connected = true)
+                onSuccess={ (workingEndpoint,answer) ->
+                    prefs.edit().putString("endpoint",workingEndpoint).apply()
+                    _state.value=_state.value.copy(endpoint=workingEndpoint,messages=_state.value.messages+ChatMessage(answer,false),busy=false,speakToken=_state.value.speakToken+1,lastAssistantText=answer,connected=true)
                 },
-                onFailure = { error ->
-                    val detail = error.message ?: "unknown error"
-                    _state.value = _state.value.copy(messages = _state.value.messages + ChatMessage("API error: " + detail, false), busy = false, error = detail, connected = false)
-                },
+                onFailure={ error ->
+                    val detail=error.message?:"unknown error"
+                    _state.value=_state.value.copy(messages=_state.value.messages+ChatMessage("API error: "+detail,false),busy=false,error=detail,connected=false)
+                }
             )
         }
     }
 
-    private fun candidateEndpoints(endpoint: String): List<String> {
-        val normalized = endpoint.trim().trimEnd('/')
-        val loopback = normalized.equals("/127.0.0.1:8000", true) ||
-            normalized.equals("127.0.0.1:8000", true) ||
-            normalized.equals("http://127.0.0.1:8000", true) ||
-            normalized.equals("http://localhost:8000", true)
-        val candidates = linkedSetOf<String>()
-        if (!loopback && normalized.isNotBlank()) candidates += normalized
-        discoverLanEndpoint()?.let { candidates += it }
-        if (BuildConfig.DEFAULT_API_BASE_URL.isNotBlank()) candidates += BuildConfig.DEFAULT_API_BASE_URL
+    private fun candidateEndpoints(endpoint:String):List<String>{
+        val normalized=endpoint.trim().trimEnd('/')
+        val loopback=normalized.equals("/127.0.0.1:8000",true)||normalized.equals("127.0.0.1:8000",true)||normalized.equals("http://127.0.0.1:8000",true)||normalized.equals("http://localhost:8000",true)
+        val candidates=linkedSetOf<String>()
+        if(!loopback&&normalized.isNotBlank()) candidates+=normalized
+        discoverLanEndpoint()?.let{candidates+=it}
+        if(BuildConfig.DEFAULT_API_BASE_URL.isNotBlank()) candidates+=BuildConfig.DEFAULT_API_BASE_URL
         return candidates.toList()
     }
 
-    private fun discoverLanEndpoint(): String? {
-        val hosts = linkedSetOf<String>()
-        try {
-            val interfaces = NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
-            for (networkInterface in interfaces) {
-                if (!networkInterface.isUp || networkInterface.isLoopback) continue
-                for (address in networkInterface.interfaceAddresses) {
-                    val ipv4 = address.address as? Inet4Address ?: continue
-                    if (!ipv4.isSiteLocalAddress) continue
-                    val prefix = address.networkPrefixLength.toInt()
-                    if (prefix !in 1..32) continue
-                    val scanPrefix = maxOf(prefix, 24)
-                    val bytes = ipv4.address
-                    val ip = ((bytes[0].toInt() and 0xff) shl 24) or
-                        ((bytes[1].toInt() and 0xff) shl 16) or
-                        ((bytes[2].toInt() and 0xff) shl 8) or
-                        (bytes[3].toInt() and 0xff)
-                    val mask = if (scanPrefix == 32) -1 else (-1 shl (32 - scanPrefix))
-                    val network = ip and mask
-                    val hostCount = 1 shl (32 - scanPrefix)
-                    for (offset in 1 until hostCount - 1) {
-                        val candidate = network + offset
-                        hosts += (candidate shr 24 and 0xff).toString() + "." +
-                            (candidate shr 16 and 0xff).toString() + "." +
-                            (candidate shr 8 and 0xff).toString() + "." +
-                            (candidate and 0xff).toString()
-                        if (hosts.size >= 254) break
+    private fun discoverLanEndpoint():String?{
+        val hosts=linkedSetOf<String>()
+        try{
+            val interfaces=NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
+            for(networkInterface in interfaces){
+                if(!networkInterface.isUp||networkInterface.isLoopback) continue
+                for(address in networkInterface.interfaceAddresses){
+                    val ipv4=address.address as? Inet4Address ?: continue
+                    if(!ipv4.isSiteLocalAddress) continue
+                    val prefix=address.networkPrefixLength.toInt()
+                    if(prefix !in 1..32) continue
+                    val scanPrefix=maxOf(prefix,24)
+                    val bytes=ipv4.address
+                    val ip=((bytes[0].toInt() and 0xff) shl 24) or ((bytes[1].toInt() and 0xff) shl 16) or ((bytes[2].toInt() and 0xff) shl 8) or (bytes[3].toInt() and 0xff)
+                    val mask=if(scanPrefix==32)-1 else(-1 shl (32-scanPrefix))
+                    val network=ip and mask
+                    val hostCount=1 shl (32-scanPrefix)
+                    for(offset in 1 until hostCount-1){
+                        val candidate=network+offset
+                        hosts += (candidate shr 24 and 0xff).toString()+"."+(candidate shr 16 and 0xff).toString()+"."+(candidate shr 8 and 0xff).toString()+"."+(candidate and 0xff).toString()
+                        if(hosts.size>=254) break
                     }
                 }
             }
-        } catch (_: Exception) {
-            return null
-        }
-        if (hosts.isEmpty()) return null
-
-        val executor = Executors.newFixedThreadPool(32)
-        val completion = ExecutorCompletionService<String?>(executor)
-        val futures = hosts.map { host ->
-            completion.submit(Callable {
-                try {
-                    val connection = (URL("http://" + host + ":8000/health").openConnection() as HttpURLConnection).apply {
-                        requestMethod = "GET"
-                        connectTimeout = 300
-                        readTimeout = 500
-                    }
-                    try {
-                        if (connection.responseCode in 200..299) "http://" + host + ":8000" else null
-                    } finally {
-                        connection.disconnect()
-                    }
-                } catch (_: Exception) {
-                    null
-                }
-            })
-        }
-        return try {
-            repeat(futures.size) {
-                val found = completion.take().get()
-                if (found != null) return found
-            }
-            null
-        } catch (_: Exception) {
-            null
-        } finally {
-            executor.shutdownNow()
-        }
+        }catch(_:Exception){return null}
+        if(hosts.isEmpty()) return null
+        val executor=Executors.newFixedThreadPool(32)
+        val completion=ExecutorCompletionService<String?>(executor)
+        val futures=hosts.map{host->completion.submit(Callable{
+            try{
+                val connection=(URL("http://"+host+":8000/health").openConnection() as HttpURLConnection).apply{requestMethod="GET";connectTimeout=300;readTimeout=500}
+                try{if(connection.responseCode in 200..299)"http://"+host+":8000" else null}finally{connection.disconnect()}
+            }catch(_:Exception){null}
+        })}
+        return try{repeat(futures.size){val found=completion.take().get();if(found!=null)return found};null}catch(_:Exception){null}finally{executor.shutdownNow()}
     }
 
-    private fun postWithRetry(endpoint: String, message: String): Result<Pair<String, String>> {
-        var last: Exception = IllegalStateException("Connection failed")
-        for (candidate in candidateEndpoints(endpoint)) {
-            repeat(3) { attempt ->
-                try { return postChat(candidate, message).map { answer -> candidate to answer } }
-                catch (error: Exception) { last = error; if (attempt < 2) Thread.sleep(500L * (attempt + 1)) }
+    private fun postWithRetry(endpoint:String,message:String):Result<Pair<String,String>>{
+        var last:Exception=IllegalStateException("Connection failed")
+        for(candidate in candidateEndpoints(endpoint)){
+            repeat(3){attempt->
+                try{return postChat(candidate,message).map{answer->candidate to answer}}
+                catch(error:Exception){last=error;if(attempt<2)Thread.sleep(500L*(attempt+1))}
             }
         }
         return Result.failure(last)
     }
 
-    private fun checkConnection() {
-        val endpoint = _state.value.endpoint.trim().trimEnd('/')
-        _state.value = _state.value.copy(connectionChecking = true)
-        for (candidate in candidateEndpoints(endpoint)) {
-            try {
-                val connection = (URL(candidate + "/health").openConnection() as HttpURLConnection).apply { requestMethod = "GET"; connectTimeout = 5_000; readTimeout = 5_000 }
-                val status = try { connection.responseCode } finally { connection.disconnect() }
-                if (status in 200..299) {
-                    _state.value = _state.value.copy(endpoint = candidate, connected = true, connectionChecking = false)
-                    return
-                }
-            } catch (_: Exception) { }
+    private fun checkConnection(){
+        val endpoint=_state.value.endpoint.trim().trimEnd('/')
+        _state.value=_state.value.copy(connectionChecking=true)
+        for(candidate in candidateEndpoints(endpoint)){
+            try{
+                val connection=(URL(candidate+"/health").openConnection() as HttpURLConnection).apply{requestMethod="GET";connectTimeout=5000;readTimeout=5000}
+                val status=try{connection.responseCode}finally{connection.disconnect()}
+                if(status in 200..299){_state.value=_state.value.copy(endpoint=candidate,connected=true,connectionChecking=false);return}
+            }catch(_:Exception){}
         }
-        _state.value = _state.value.copy(connected = false, connectionChecking = false)
+        _state.value=_state.value.copy(connected=false,connectionChecking=false)
     }
 
-    private fun postChat(endpoint: String, message: String): Result<String> {
-        val connection = (URL(endpoint + "/chat").openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"; connectTimeout = 10_000; readTimeout = 60_000; doOutput = true
-            setRequestProperty("Content-Type", "application/json"); setRequestProperty("Accept", "application/json")
+    private fun postChat(endpoint:String,message:String):Result<String>{
+        val connection=(URL(endpoint+"/chat").openConnection() as HttpURLConnection).apply{
+            requestMethod="POST";connectTimeout=10000;readTimeout=60000;doOutput=true
+            setRequestProperty("Content-Type","application/json");setRequestProperty("Accept","application/json");setRequestProperty("X-JARVIS-Device",deviceId)
         }
-        return try {
-            val body = JSONObject().put("message", message).toString()
-            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-            val status = connection.responseCode
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (status !in 200..299) Result.failure(IllegalStateException("HTTP $status: $response"))
-            else {
-                val answer = JSONObject(response).optString("response")
-                if (answer.isBlank()) Result.failure(IllegalStateException("Server returned no response")) else Result.success(answer)
-            }
-        } finally { connection.disconnect() }
+        return try{
+            val body=JSONObject().put("message",message).toString()
+            connection.outputStream.use{it.write(body.toByteArray(Charsets.UTF_8))}
+            val status=connection.responseCode
+            val stream=if(status in 200..299)connection.inputStream else connection.errorStream
+            val response=stream?.bufferedReader()?.use{it.readText()}.orEmpty()
+            if(status !in 200..299)Result.failure(IllegalStateException("HTTP $status: $response"))
+            else{val answer=JSONObject(response).optString("response");if(answer.isBlank())Result.failure(IllegalStateException("Server returned no response"))else Result.success(answer)}
+        }finally{connection.disconnect()}
     }
 }
