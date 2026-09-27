@@ -13,7 +13,7 @@ android {
         targetSdk = 35
         versionCode = 8
         versionName = "0.8.0"
-        buildConfigField("String", "DEFAULT_API_BASE_URL", """")
+        buildConfigField("String", "DEFAULT_API_BASE_URL", "\"\"\"")
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
