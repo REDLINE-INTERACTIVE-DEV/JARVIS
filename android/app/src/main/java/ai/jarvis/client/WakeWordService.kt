@@ -51,7 +51,11 @@ class WakeWordService : Service() {
         if (listening || !SpeechRecognizer.isRecognitionAvailable(this)) return
         listening = true
         recognizer?.destroy()
-        recognizer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {\n            SpeechRecognizer.createOnDeviceSpeechRecognizer(this)\n        } else {\n            SpeechRecognizer.createSpeechRecognizer(this)\n        }.also { sr ->
+        recognizer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
+            SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
+        } else {
+            SpeechRecognizer.createSpeechRecognizer(this)
+        }.also { sr ->
             sr.setRecognitionListener(object : RecognitionListener {
                 override fun onResults(results: android.os.Bundle?) {
                     listening = false
@@ -72,17 +76,20 @@ class WakeWordService : Service() {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 15_000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 15_000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1_500L)
             }
             sr.startListening(recognizerIntent)
         }
     }
 
     private fun handlePhrase(raw: String) {
-        val phrase = raw.trim().replace(Regex("\\s+"), " ")
-        val wakeMatch = Regex("^\\s*(?:hey\\s+)?jarvis(?:\\b|[,.:;!?-])(.*)$", RegexOption.IGNORE_CASE).matchEntire(phrase)
+        val phrase = raw.trim().replace(Regex("\s+"), " ")
+        val wakeMatch = WakePhraseMatcher.match(phrase)
 
         if (wakeMatch != null) {
-            val afterWake = wakeMatch.groupValues.getOrNull(1).orEmpty().trimStart(',', '.', ':', ';', '-', ' ')
+            val afterWake = wakeMatch.command.orEmpty()
             broadcast(ACTION_COMMAND)
             if (afterWake.isNotBlank()) {
                 awaitingCommand = false
@@ -236,9 +243,19 @@ class WakeWordService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "JARVIS wake word", NotificationManager.IMPORTANCE_LOW)
-            )
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.deleteNotificationChannel(LEGACY_CHANNEL_ID)
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "JARVIS wake word",
+                NotificationManager.IMPORTANCE_LOW,
+            ).apply {
+                setSound(null, null)
+                enableVibration(false)
+                enableLights(false)
+                description = "Silent foreground service status for the JARVIS wake listener"
+            }
+            manager.createNotificationChannel(channel)
         }
     }
 
@@ -273,7 +290,8 @@ class WakeWordService : Service() {
         const val ACTION_STOP = "ai.jarvis.client.ACTION_STOP_WAKE"
         const val EXTRA_COMMAND = "command"
         const val EXTRA_RESPONSE = "response"
-        private const val CHANNEL_ID = "jarvis_wake"
+        private const val CHANNEL_ID = "jarvis_wake_silent_v2"
+        private const val LEGACY_CHANNEL_ID = "jarvis_wake"
         private const val NOTIFICATION_ID = 9011
 
         fun start(context: Context) {
