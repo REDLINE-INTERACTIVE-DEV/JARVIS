@@ -166,9 +166,6 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                                 } else {
                                     microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                 }
-                                    vm.setListening(false)
-                                    vm.setError("Speech recognition is not available on this device.")
-                                }
                             }
                         },
                     )
