@@ -24,6 +24,15 @@ class MemoryStore:
                 created_at TEXT NOT NULL,
                 reported_at TEXT
             )""")
+            existing_columns = {row["name"] for row in db.execute("PRAGMA table_info(events)").fetchall()}
+            migrations = {
+                "provider": "ALTER TABLE events ADD COLUMN provider TEXT NOT NULL DEFAULT 'local'",
+                "account_id": "ALTER TABLE events ADD COLUMN account_id TEXT NOT NULL DEFAULT ''",
+                "version": "ALTER TABLE events ADD COLUMN version TEXT NOT NULL DEFAULT ''",
+            }
+            for column, statement in migrations.items():
+                if column not in existing_columns:
+                    db.execute(statement)
             db.execute("CREATE INDEX IF NOT EXISTS idx_events_pending ON events(reported_at, created_at, id)")
             db.execute("CREATE INDEX IF NOT EXISTS idx_events_provider ON events(provider, account_id, id)")
             db.execute("""CREATE TABLE IF NOT EXISTS sync_cursors(
