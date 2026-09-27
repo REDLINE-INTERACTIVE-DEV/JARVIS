@@ -42,6 +42,9 @@ def create_app(memory=None, brain=None, tools=None, research=None):
         content: str = Field(min_length=1, max_length=20000)
         external_id: str = Field(default="", max_length=500)
         created_at: str | None = None
+        provider: str = Field(default="local", max_length=100)
+        account_id: str = Field(default="", max_length=300)
+        version: str = Field(default="", max_length=200)
 
     class SyncPushRequest(BaseModel):
         device_id: str = Field(min_length=1, max_length=200)
@@ -153,13 +156,12 @@ def create_app(memory=None, brain=None, tools=None, research=None):
 
     @app.post("/briefing/morning")
     async def morning_briefing(limit: int = 100):
-        events = memory.pending_events(limit)
+        events = memory.claim_pending_events(limit)
         if not events:
             return {"response":"There is nothing new to report.", "event_count":0, "event_ids":[]}
         lines=[f"{e['event_type']}: {e['title']} — {e['content']}" for e in events]
         response="Good morning. Here is your new JARVIS briefing:\n" + "\n".join(lines)
-        marked=memory.mark_events_reported([e["id"] for e in events])
-        return {"response":response,"event_count":marked,"event_ids":[e["id"] for e in events]}
+        return {"response":response,"event_count":len(events),"event_ids":[e["id"] for e in events]}
 
     @app.get("/memory")
     async def get_memory(limit:int=20):
