@@ -11,6 +11,7 @@ from .tasks import TaskEngine
 from .tools import ToolRegistry
 from .voice import VoiceState
 from .screen import ScreenBridge
+from .device_registry import DeviceRegistry
 
 def create_app(memory=None, brain=None, tools=None, research=None):
     app = FastAPI(title="JARVIS Local API", version="0.10.0")
@@ -21,6 +22,7 @@ def create_app(memory=None, brain=None, tools=None, research=None):
     reasoning = ReasoningEngine(16)
     tasks = TaskEngine(tools.call)
     screen = ScreenBridge()
+    devices = DeviceRegistry()
 
     async def answer(message):
         if isinstance(brain, BrainRuntime):
@@ -203,6 +205,21 @@ def create_app(memory=None, brain=None, tools=None, research=None):
 
     async def robot_worker(job): return await answer(f"Robot {job.robot_id} job: {job.command}")
     fleet=RobotFleetCoordinator(robot_worker,reasoning=reasoning); mission=MissionSupervisor(robot_worker,reasoning=reasoning,fleet=fleet)
+
+    @app.post("/devices/register")
+    async def register_device(req: dict):
+        return devices.register(req.get("device_id", ""), req.get("name", ""), req.get("kind", "unknown"), req.get("capabilities", []), req.get("metadata", {}))
+
+    @app.post("/devices/heartbeat/{device_id}")
+    async def device_heartbeat(device_id: str):
+        try:
+            return devices.heartbeat(device_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="device is not registered") from exc
+
+    @app.get("/devices")
+    async def list_devices():
+        return {"devices": devices.list()}
 
     @app.get("/screen/devices")
     async def screen_devices(): return {"devices":[device.as_dict() for device in screen.devices()]}
