@@ -6,6 +6,12 @@ from backend.app.memory import MemoryStore
 
 
 class DeterministicResearch:
+    def should_search(self, message):
+        return "search" in message.lower() or "look up" in message.lower()
+
+    def clean_query(self, message):
+        return message
+
     def search(self, *args, **kwargs):
         return [{"title": "CI result", "url": "https://example.com/research", "snippet": "Synthetic verification result."}]
 

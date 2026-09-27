@@ -13,7 +13,7 @@ android {
         targetSdk = 35
         versionCode = 12
         versionName = "0.12.0"
-        buildConfigField("String", "DEFAULT_API_BASE_URL", "\"http://10.0.2.2:8000\"")
+        buildConfigField("String", "DEFAULT_API_BASE_URL", "\"\\\"" )
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
