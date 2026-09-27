@@ -14,21 +14,26 @@ class Brain(Protocol):
 
 
 class LocalBrain:
-    """Local-first JARVIS brain with optional llama.cpp inference."""
+    """Independent local-first JARVIS personality and response brain."""
+
+    IDENTITY = (
+        "You are JARVIS, an independent personal AI companion and task orchestrator. "
+        "Speak naturally like a capable long-term companion, not like a generic command parser. "
+        "Be calm, witty when appropriate, concise when the situation is simple, and detailed when "
+        "the user needs reasoning. Keep conversational context and use supplied memory only as facts. "
+        "Never invent personal history, completed actions, or tool results. Distinguish conversation, "
+        "reasoning, research, and tool execution. When a request contains multiple independent goals, "
+        "keep every goal tracked and do not silently drop one. Ask for clarification only when it is "
+        "genuinely required."
+    )
 
     def __init__(self) -> None:
         self.model_path = os.getenv("JARVIS_MODEL_PATH")
         self._llm = None
-
         if self.model_path and Path(self.model_path).is_file():
             try:
                 from llama_cpp import Llama
-
-                self._llm = Llama(
-                    model_path=self.model_path,
-                    n_ctx=self._context_size(),
-                    verbose=False,
-                )
+                self._llm = Llama(model_path=self.model_path, n_ctx=self._context_size(), verbose=False)
             except Exception:
                 self._llm = None
 
@@ -49,65 +54,37 @@ class LocalBrain:
         recent = memories[-8:]
         return "\n".join(
             f"{item.get('kind', 'memory')}: {item.get('content', '')}"
-            for item in recent
-            if item.get("content")
+            for item in recent if item.get("content")
         )
+
+    def _build_prompt(self, message: str, memories: list[dict[str, Any]]) -> str:
+        context = self._memory_context(memories)
+        return f"{self.IDENTITY}\n\nRelevant memory and recent conversation:\n{context or '(none)'}\n\nUser: {message}\nJARVIS:"
 
     def respond(self, message: str, memories: list[dict[str, Any]]) -> str:
         message = message.strip()
         if not message:
             return "Please say something and I'll respond."
-
         if self._llm is not None:
-            context = self._memory_context(memories)
-            prompt = (
-                "You are JARVIS, a composed, precise personal AI assistant. "
-                "Be helpful, concise, calm, and conversational. "
-                "Use memory only as context and never invent facts. "
-                "When current web results are supplied, distinguish them from "
-                "your own reasoning and cite the supplied source URLs.\n\n"
-                f"Memory:\n{context or '(none)'}\n\n"
-                f"User: {message}\n"
-                "JARVIS:"
-            )
             try:
-                result = self._llm(
-                    prompt,
-                    max_tokens=512,
-                    stop=["\nUser:", "\nJARVIS:"],
-                )
+                result = self._llm(self._build_prompt(message, memories), max_tokens=512, stop=["\nUser:", "\nJARVIS:"])
                 choices = result.get("choices", [])
                 answer = choices[0].get("text", "").strip() if choices else ""
                 if answer:
                     return answer
             except Exception:
                 pass
-
         return f"Local foundation mode is active. You said: {message}"
 
-    def answer_with_research(
-        self,
-        message: str,
-        memories: list[dict[str, Any]],
-        results: list[dict[str, str]],
-    ) -> str:
+    def answer_with_research(self, message: str, memories: list[dict[str, Any]], results: list[dict[str, str]]) -> str:
         if not results:
             return "I searched the web, but I couldn't find usable results."
-        context = "\n".join(
-            f"- {item['title']} | {item['url']} | {item['snippet']}"
-            for item in results
-        )
+        context = "\n".join(f"- {x['title']} | {x['url']} | {x['snippet']}" for x in results)
         if self._llm is None:
-            return "I found these results:\n" + "\n".join(
-                f"{i + 1}. {item['title']} — {item['url']}"
-                for i, item in enumerate(results)
-            )
-
+            return "I found these results:\n" + "\n".join(f"{i + 1}. {x['title']} — {x['url']}" for i, x in enumerate(results))
         prompt = (
-            "You are JARVIS. Answer the user's request using ONLY the supplied "
-            "web-search results for current factual claims. Give a concise "
-            "summary and mention the relevant source URLs. If the results are "
-            "insufficient, say so clearly.\n\n"
+            f"{self.IDENTITY}\n\nUse ONLY the supplied web results for current factual claims. "
+            f"Separate sourced facts from reasoning and mention relevant source URLs.\n\n"
             f"User: {message}\n\nSearch results:\n{context}\n\nJARVIS:"
         )
         try:
