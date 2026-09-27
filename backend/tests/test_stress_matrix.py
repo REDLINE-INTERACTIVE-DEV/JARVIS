@@ -10,10 +10,10 @@ from backend.app.research import ResearchEngine, SearchResult
 class DeterministicBrain:
     provider = "test-brain"
 
-    async def respond(self, message, memories):
+    def respond(self, message, memories):
         return f"JARVIS reply {message}"
 
-    async def answer_with_research(self, message, memories, results):
+    def answer_with_research(self, message, memories, results):
         return f"JARVIS researched reply {message}: {len(results)} sources"
 
 
