@@ -1,1 +1,3 @@
-<resources><string name="accessibility_service_description">Allows JARVIS to view and interact with this device after you explicitly enable its accessibility service.</string></resources>
+<resources>
+    <string name="accessibility_service_description">Allows JARVIS to view and interact with this device after you explicitly enable its accessibility service.</string>
+</resources>

@@ -47,8 +47,28 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     fun setInput(value: String) { _state.value = _state.value.copy(input = value, error = null) }
     fun setEndpoint(value: String) { _state.value = _state.value.copy(endpoint = value.trimEnd('/'), error = null, connected = false) }
     fun setListening(active: Boolean) { _state.value = _state.value.copy(listening = active) }
+    fun setInitiating() { _state.value = _state.value.copy(listening = false, busy = true, error = null) }
+    fun setError(value: String?) { _state.value = _state.value.copy(error = value) }
     fun refreshConnection() { viewModelScope.launch(Dispatchers.IO) { checkConnection() } }
     fun setSpeaking(active: Boolean) { _state.value = _state.value.copy(speaking = active) }
+
+    fun receiveExternalResponse(command: String, answer: String) {
+        val cleanCommand = command.trim()
+        val cleanAnswer = answer.trim().ifBlank { "I didn't receive a response from the backend." }
+        val additions = buildList {
+            if (cleanCommand.isNotBlank()) add(ChatMessage(cleanCommand, true))
+            add(ChatMessage(cleanAnswer, false))
+        }
+        _state.value = _state.value.copy(
+            input = "",
+            messages = _state.value.messages + additions,
+            busy = false,
+            listening = false,
+            speakToken = _state.value.speakToken + 1,
+            lastAssistantText = cleanAnswer,
+            error = null,
+        )
+    }
 
     fun send() {
         val message = _state.value.input.trim()

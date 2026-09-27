@@ -1,7 +1,11 @@
 package ai.jarvis.client
 
 import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -19,18 +23,23 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.sin
@@ -40,10 +49,41 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var recognizer: SpeechRecognizer? = null
 
+    private val wakeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                WakeWordService.ACTION_COMMAND -> viewModel.setListening(true)
+                WakeWordService.ACTION_INITIATING -> viewModel.setInitiating()
+                WakeWordService.ACTION_RESPONSE -> {
+                    viewModel.receiveExternalResponse(
+                        intent.getStringExtra(WakeWordService.EXTRA_COMMAND).orEmpty(),
+                        intent.getStringExtra(WakeWordService.EXTRA_RESPONSE).orEmpty(),
+                    )
+                }
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         tts = TextToSpeech(this, this)
+        registerWakeReceiver()
+        WakeWordService.start(this)
         setContent { JarvisApp(viewModel) }
+    }
+
+    private fun registerWakeReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(WakeWordService.ACTION_COMMAND)
+            addAction(WakeWordService.ACTION_INITIATING)
+            addAction(WakeWordService.ACTION_RESPONSE)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(wakeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(wakeReceiver, filter)
+        }
     }
 
     override fun onInit(status: Int) {
@@ -52,22 +92,15 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             tts?.setPitch(0.92f)
             tts?.setSpeechRate(0.88f)
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {
-                    runOnUiThread { viewModel.setSpeaking(true) }
-                }
-
-                override fun onDone(utteranceId: String?) {
-                    runOnUiThread { viewModel.setSpeaking(false) }
-                }
-
-                override fun onError(utteranceId: String?) {
-                    runOnUiThread { viewModel.setSpeaking(false) }
-                }
+                override fun onStart(utteranceId: String?) { runOnUiThread { viewModel.setSpeaking(true) } }
+                override fun onDone(utteranceId: String?) { runOnUiThread { viewModel.setSpeaking(false) } }
+                override fun onError(utteranceId: String?) { runOnUiThread { viewModel.setSpeaking(false) } }
             })
         }
     }
 
     override fun onDestroy() {
+        try { unregisterReceiver(wakeReceiver) } catch (_: Exception) {}
         recognizer?.destroy()
         tts?.stop()
         tts?.shutdown()
@@ -82,8 +115,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val permissionLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.RequestPermission()
         ) { granted ->
-            if (granted) startListening(context)
-            else vm.setListening(false)
+            if (granted) startListening(context) else vm.setListening(false)
         }
 
         LaunchedEffect(state.speakToken) {
@@ -97,156 +129,187 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }
         }
 
-        MaterialTheme {
+        MaterialTheme(
+            colorScheme = darkColorScheme(
+                primary = JarvisBlue,
+                onPrimary = Color.Black,
+                background = JarvisBackground,
+                onBackground = Color(0xFFD9F8FF),
+                surface = Color(0xFF06171D),
+                onSurface = Color(0xFFD9F8FF),
+            )
+        ) {
             Column(
-                Modifier.fillMaxSize().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("JARVIS", style = MaterialTheme.typography.headlineMedium)
+                Spacer(Modifier.height(8.dp))
+
                 JarvisCore(
                     listening = state.listening,
                     speaking = state.speaking,
                     thinking = state.busy && !state.listening && !state.speaking,
-                )
-
-                LazyColumn(
-                    Modifier.weight(1f).fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    items(state.messages) { message ->
-                        Text(if (message.fromUser) "You: " + message.text else "JARVIS: " + message.text)
-                    }
-                }
-
-                state.error?.let {
-                    Text(it, color = MaterialTheme.colorScheme.error)
-                }
-
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedTextField(
-                        value = state.input,
-                        onValueChange = vm::setInput,
-                        label = { Text("Message") },
-                        modifier = Modifier.weight(1f),
-                        enabled = !state.busy,
-                    )
-                    Button(
-                        onClick = {
+                    onClick = {
+                        if (!state.busy) {
                             if (SpeechRecognizer.isRecognitionAvailable(context)) {
                                 permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                             } else {
                                 vm.setListening(false)
+                                vm.setError("Speech recognition is not available on this device.")
                             }
-                        },
+                        }
+                    },
+                )
+
+                val status = when {
+                    state.listening -> "PERCEIVING"
+                    state.busy -> "INITIATING"
+                    state.speaking -> "SPEAKING"
+                    else -> null
+                }
+
+                if (status != null) {
+                    Text(status, color = JarvisBlue, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)
+                } else {
+                    Spacer(Modifier.height(17.dp))
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedTextField(
+                        value = state.input,
+                        onValueChange = vm::setInput,
+                        placeholder = { Text("Talk to JARVIS...") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
                         enabled = !state.busy,
-                    ) { Text(if (state.listening) "Listening..." else "Voice") }
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = JarvisBlue,
+                            unfocusedBorderColor = Color(0xFF28515C),
+                            cursorColor = JarvisBlue,
+                        ),
+                    )
                     Button(
                         onClick = vm::send,
                         enabled = !state.busy && state.input.isNotBlank(),
-                    ) { Text(if (state.busy) "..." else "Send") }
+                        colors = ButtonDefaults.buttonColors(containerColor = JarvisBlue, contentColor = Color.Black),
+                    ) { Text("Send") }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Text("Say JARVIS anytime to wake him", color = Color(0xFF6F9CA6), fontSize = 11.sp)
+
+                state.error?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                LazyColumn(
+                    Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                    reverseLayout = true,
+                ) {
+                    items(state.messages.asReversed()) { message ->
+                        Text(
+                            if (message.fromUser) "YOU  " + message.text else "JARVIS  " + message.text,
+                            color = if (message.fromUser) Color(0xFF87B9C4) else Color(0xFFD9F8FF),
+                            fontSize = 13.sp,
+                        )
+                    }
                 }
             }
         }
     }
 
     @Composable
-    private fun JarvisCore(listening: Boolean, speaking: Boolean, thinking: Boolean) {
+    private fun JarvisCore(
+        listening: Boolean,
+        speaking: Boolean,
+        thinking: Boolean,
+        onClick: () -> Unit,
+    ) {
         val transition = rememberInfiniteTransition(label = "jarvis-core")
         val pulse by transition.animateFloat(
-            initialValue = 0.8f,
-            targetValue = 1.15f,
-            animationSpec = infiniteRepeatable(
-                tween(900),
-                RepeatMode.Reverse,
-            ),
+            initialValue = 0.9f,
+            targetValue = 1.08f,
+            animationSpec = infiniteRepeatable(tween(750), RepeatMode.Reverse),
             label = "pulse",
         )
         val active = listening || speaking || thinking
 
-        val primaryColor = MaterialTheme.colorScheme.primary
-
-        Canvas(
-            Modifier.fillMaxWidth().height(180.dp)
+        Box(
+            Modifier.fillMaxWidth().height(148.dp).clickable(enabled = !thinking, onClick = onClick),
+            contentAlignment = Alignment.Center,
         ) {
-            val center = Offset(size.width / 2f, size.height / 2f)
-            val base = minOf(size.width, size.height) * 0.16f
-            val radius = if (active) base * pulse else base
-            val ring = Stroke(width = 4f, cap = StrokeCap.Round)
+            Canvas(Modifier.fillMaxSize()) {
+                val center = Offset(size.width / 2f, size.height / 2f)
+                val base = minOf(size.width, size.height) * 0.18f
+                val radius = if (active) base * pulse else base
 
-            drawCircle(
-                color = primaryColor,
-                center = center,
-                radius = radius,
-                style = ring,
-            )
+                drawCircle(
+                    color = JarvisBlue,
+                    center = center,
+                    radius = radius,
+                    style = Stroke(width = 3.5f, cap = StrokeCap.Round),
+                )
 
-            val bars = 72
-            for (i in 0 until bars) {
-                val angle = (i.toFloat() / bars) * (Math.PI * 2.0)
-                val wave = if (active) {
-                    0.65f + 0.35f * sin(i * 0.55f + pulse * 5f)
-                } else {
-                    0.25f + 0.08f * cos(i * 0.35f)
+                val bars = 72
+                for (i in 0 until bars) {
+                    val angle = (i.toFloat() / bars) * (Math.PI * 2.0)
+                    val wave = if (active) 0.6f + 0.4f * sin(i * 0.55f + pulse * 5f)
+                    else 0.2f + 0.06f * cos(i * 0.35f)
+                    val inner = radius * (1.25f + wave * 0.10f)
+                    val outer = inner + if (active) 9f + 7f * wave else 4f
+                    drawLine(
+                        color = JarvisBlue,
+                        start = Offset(center.x + cos(angle).toFloat() * inner, center.y + sin(angle).toFloat() * inner),
+                        end = Offset(center.x + cos(angle).toFloat() * outer, center.y + sin(angle).toFloat() * outer),
+                        strokeWidth = if (active) 3f else 1.5f,
+                        cap = StrokeCap.Round,
+                    )
                 }
-                val inner = radius * (1.28f + wave * 0.12f)
-                val outer = inner + if (active) 12f + 8f * wave else 5f
-                val start = Offset(
-                    center.x + cos(angle).toFloat() * inner,
-                    center.y + sin(angle).toFloat() * inner,
-                )
-                val end = Offset(
-                    center.x + cos(angle).toFloat() * outer,
-                    center.y + sin(angle).toFloat() * outer,
-                )
-                drawLine(
-                    color = primaryColor,
-                    start = start,
-                    end = end,
-                    strokeWidth = if (active) 4f else 2f,
-                    cap = StrokeCap.Round,
-                )
+
+                val path = Path()
+                val waveWidth = radius * 1.7f
+                for (i in 0..80) {
+                    val x = center.x - waveWidth / 2f + waveWidth * i / 80
+                    val y = center.y + sin(i * 0.55f + pulse * 6f) * if (active) 8f else 2f
+                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                drawPath(path = path, color = JarvisBlue, style = Stroke(width = 2.5f, cap = StrokeCap.Round))
             }
 
-            val path = Path()
-            val waveWidth = radius * 1.8f
-            val points = 80
-            for (i in 0..points) {
-                val x = center.x - waveWidth / 2f + waveWidth * i / points
-                val y = center.y + sin(i * 0.55f + pulse * 6f) * if (active) 10f else 3f
-                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-            }
-            drawPath(
-                path = path,
-                color = primaryColor,
-                style = Stroke(width = 3f, cap = StrokeCap.Round),
+            Text(
+                "J.A.R.V.I.S.",
+                color = Color(0xFFE7FCFF),
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.sp,
             )
         }
     }
 
-    private fun startListening(context: android.content.Context) {
+    private fun startListening(context: Context) {
         recognizer?.destroy()
         viewModel.setListening(true)
         recognizer = SpeechRecognizer.createSpeechRecognizer(context).also { sr ->
             sr.setRecognitionListener(object : RecognitionListener {
                 override fun onResults(results: Bundle?) {
                     viewModel.setListening(false)
-                    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        ?.firstOrNull()
-                        ?.let {
-                            viewModel.setInput(it)
-                            viewModel.send()
-                        }
+                    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let {
+                        viewModel.setInput(it)
+                        viewModel.send()
+                    }
                     sr.destroy()
                 }
-
-                override fun onError(error: Int) {
-                    viewModel.setListening(false)
-                    sr.destroy()
-                }
-
+                override fun onError(error: Int) { viewModel.setListening(false); sr.destroy() }
                 override fun onReadyForSpeech(params: Bundle?) {}
                 override fun onBeginningOfSpeech() {}
                 override fun onRmsChanged(rmsdB: Float) {}
@@ -266,5 +329,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun speak(text: String) {
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis")
+    }
+
+    companion object {
+        private val JarvisBlue = Color(0xFF4DDCFF)
+        private val JarvisBackground = Color(0xFF020B0F)
     }
 }
