@@ -159,9 +159,14 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                         initiating = state.busy && !state.listening && !state.speaking,
                         onClick = {
                             if (!state.busy) {
-                                if (SpeechRecognizer.isRecognitionAvailable(context)) {
+                                if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+                                    vm.setListening(false)
+                                    vm.setError("Speech recognition is not available on this device.")
+                                } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                                     WakeWordService.startInteractiveListening(context)
                                 } else {
+                                    microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                }
                                     vm.setListening(false)
                                     vm.setError("Speech recognition is not available on this device.")
                                 }
