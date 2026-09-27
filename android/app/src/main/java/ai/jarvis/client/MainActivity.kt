@@ -23,6 +23,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -134,93 +135,119 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 primary = JarvisBlue,
                 onPrimary = Color.Black,
                 background = JarvisBackground,
-                onBackground = Color(0xFFD9F8FF),
-                surface = Color(0xFF06171D),
-                onSurface = Color(0xFFD9F8FF),
+                onBackground = Color(0xFFE6FBFF),
+                surface = Color(0xFF04151A),
+                onSurface = Color(0xFFE6FBFF),
             )
         ) {
-            Column(
-                Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(JarvisBackground)
             ) {
-                Spacer(Modifier.height(8.dp))
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Spacer(Modifier.height(8.dp))
 
-                JarvisCore(
-                    listening = state.listening,
-                    speaking = state.speaking,
-                    thinking = state.busy && !state.listening && !state.speaking,
-                    onClick = {
-                        if (!state.busy) {
-                            if (SpeechRecognizer.isRecognitionAvailable(context)) {
-                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                            } else {
-                                vm.setListening(false)
-                                vm.setError("Speech recognition is not available on this device.")
+                    JarvisHud(
+                        listening = state.listening,
+                        speaking = state.speaking,
+                        initiating = state.busy && !state.listening && !state.speaking,
+                        onClick = {
+                            if (!state.busy) {
+                                if (SpeechRecognizer.isRecognitionAvailable(context)) {
+                                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                } else {
+                                    vm.setListening(false)
+                                    vm.setError("Speech recognition is not available on this device.")
+                                }
                             }
-                        }
-                    },
-                )
-
-                val status = when {
-                    state.listening -> "PERCEIVING"
-                    state.busy -> "INITIATING"
-                    state.speaking -> "SPEAKING"
-                    else -> null
-                }
-
-                if (status != null) {
-                    Text(status, color = JarvisBlue, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)
-                } else {
-                    Spacer(Modifier.height(17.dp))
-                }
-
-                Spacer(Modifier.height(12.dp))
-
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedTextField(
-                        value = state.input,
-                        onValueChange = vm::setInput,
-                        placeholder = { Text("Talk to JARVIS...") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                        enabled = !state.busy,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = JarvisBlue,
-                            unfocusedBorderColor = Color(0xFF28515C),
-                            cursorColor = JarvisBlue,
-                        ),
+                        },
                     )
-                    Button(
-                        onClick = vm::send,
-                        enabled = !state.busy && state.input.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = JarvisBlue, contentColor = Color.Black),
-                    ) { Text("Send") }
-                }
 
-                Spacer(Modifier.height(8.dp))
-                Text("Say JARVIS anytime to wake him", color = Color(0xFF6F9CA6), fontSize = 11.sp)
+                    val status = when {
+                        state.listening -> "PERCEIVING"
+                        state.busy -> "INITIATING"
+                        state.speaking -> "SPEAKING"
+                        else -> null
+                    }
 
-                state.error?.let {
-                    Spacer(Modifier.height(6.dp))
-                    Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                LazyColumn(
-                    Modifier.weight(1f).fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(7.dp),
-                    reverseLayout = true,
-                ) {
-                    items(state.messages.asReversed()) { message ->
+                    if (status != null) {
                         Text(
-                            if (message.fromUser) "YOU  " + message.text else "JARVIS  " + message.text,
-                            color = if (message.fromUser) Color(0xFF87B9C4) else Color(0xFFD9F8FF),
+                            status,
+                            color = JarvisBlue,
                             fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 2.8.sp,
+                        )
+                    } else {
+                        Spacer(Modifier.height(19.dp))
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = state.input,
+                            onValueChange = vm::setInput,
+                            placeholder = {
+                                Text(
+                                    "Talk to JARVIS...",
+                                    color = Color(0xFF8BAAB0),
+                                )
+                            },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            enabled = !state.busy,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = JarvisBlue,
+                                unfocusedBorderColor = Color(0xFF24606C),
+                                cursorColor = JarvisBlue,
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                            ),
+                        )
+
+                        Button(
+                            onClick = vm::send,
+                            enabled = !state.busy && state.input.isNotBlank(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF425055),
+                                disabledContainerColor = Color(0xFF2C3437),
+                                contentColor = Color.White,
+                            ),
+                            contentPadding = PaddingValues(horizontal = 22.dp, vertical = 15.dp),
+                        ) {
+                            Text("Send", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    state.error?.let {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "JARVIS CONNECTION UNAVAILABLE",
+                            color = Color(0xFFFFB4A8),
+                            fontSize = 10.sp,
+                            letterSpacing = 1.2.sp,
+                        )
+                    }
+
+                    if (state.messages.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        val last = state.messages.last()
+                        Text(
+                            last.text,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                            color = if (last.fromUser) Color(0xFF82AAB3) else Color(0xFFD8F8FF),
+                            fontSize = 12.sp,
                         )
                     }
                 }
@@ -229,69 +256,181 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     @Composable
-    private fun JarvisCore(
+    private fun JarvisHud(
         listening: Boolean,
         speaking: Boolean,
-        thinking: Boolean,
+        initiating: Boolean,
         onClick: () -> Unit,
     ) {
-        val transition = rememberInfiniteTransition(label = "jarvis-core")
+        val transition = rememberInfiniteTransition(label = "jarvis-hud")
         val pulse by transition.animateFloat(
-            initialValue = 0.9f,
-            targetValue = 1.08f,
-            animationSpec = infiniteRepeatable(tween(750), RepeatMode.Reverse),
-            label = "pulse",
+            initialValue = 0.97f,
+            targetValue = 1.03f,
+            animationSpec = infiniteRepeatable(
+                tween(900),
+                RepeatMode.Reverse,
+            ),
+            label = "hud-pulse",
         )
-        val active = listening || speaking || thinking
+        val sweep by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(3200)),
+            label = "hud-sweep",
+        )
+        val active = listening || speaking || initiating
 
         Box(
-            Modifier.fillMaxWidth().height(148.dp).clickable(enabled = !thinking, onClick = onClick),
+            Modifier
+                .fillMaxWidth()
+                .height(390.dp)
+                .clickable(enabled = !initiating, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
             Canvas(Modifier.fillMaxSize()) {
-                val center = Offset(size.width / 2f, size.height / 2f)
-                val base = minOf(size.width, size.height) * 0.18f
-                val radius = if (active) base * pulse else base
+                val cx = size.width / 2f
+                val cy = size.height / 2f
+                val maxR = minOf(size.width * 0.48f, size.height * 0.47f)
+                val scale = if (active) pulse else 1f
+                val rOuter = maxR * scale
+                val rBlue = rOuter * 0.79f
+                val rInner = rOuter * 0.60f
+                val rCore = rOuter * 0.45f
 
+                // Outer HUD ring.
                 drawCircle(
-                    color = JarvisBlue,
-                    center = center,
-                    radius = radius,
-                    style = Stroke(width = 3.5f, cap = StrokeCap.Round),
+                    color = Color(0xFF65F3FF),
+                    center = Offset(cx, cy),
+                    radius = rOuter,
+                    style = Stroke(width = 3.2f),
                 )
 
-                val bars = 72
-                for (i in 0 until bars) {
-                    val angle = (i.toFloat() / bars) * (Math.PI * 2.0)
-                    val wave = if (active) 0.6f + 0.4f * sin(i * 0.55f + pulse * 5f)
-                    else 0.2f + 0.06f * cos(i * 0.35f)
-                    val inner = radius * (1.25f + wave * 0.10f)
-                    val outer = inner + if (active) 9f + 7f * wave else 4f
+                // Outer segmented ticks, matching the reference HUD silhouette.
+                for (i in 0 until 72) {
+                    val angle = Math.toRadians(i * 5.0)
+                    val long = i % 6 == 0
+                    val inner = rOuter * (if (long) 0.88f else 0.925f)
+                    val outer = rOuter * 0.975f
                     drawLine(
-                        color = JarvisBlue,
-                        start = Offset(center.x + cos(angle).toFloat() * inner, center.y + sin(angle).toFloat() * inner),
-                        end = Offset(center.x + cos(angle).toFloat() * outer, center.y + sin(angle).toFloat() * outer),
-                        strokeWidth = if (active) 3f else 1.5f,
+                        color = if (active && i % 9 == 0) Color.White else Color(0xFF74EFFF),
+                        start = Offset(
+                            cx + cos(angle).toFloat() * inner,
+                            cy + sin(angle).toFloat() * inner,
+                        ),
+                        end = Offset(
+                            cx + cos(angle).toFloat() * outer,
+                            cy + sin(angle).toFloat() * outer,
+                        ),
+                        strokeWidth = if (long) 2.5f else 1.3f,
                         cap = StrokeCap.Round,
                     )
                 }
 
+                // Outer HUD brackets / broken arcs.
+                drawArc(
+                    color = Color(0xFF73F4FF),
+                    startAngle = 198f,
+                    sweepAngle = 112f,
+                    useCenter = false,
+                    topLeft = Offset(cx - rOuter, cy - rOuter),
+                    size = androidx.compose.ui.geometry.Size(rOuter * 2f, rOuter * 2f),
+                    style = Stroke(width = 8f, cap = StrokeCap.Round),
+                )
+                drawArc(
+                    color = Color(0xFF73F4FF),
+                    startAngle = 8f,
+                    sweepAngle = 105f,
+                    useCenter = false,
+                    topLeft = Offset(cx - rOuter, cy - rOuter),
+                    size = androidx.compose.ui.geometry.Size(rOuter * 2f, rOuter * 2f),
+                    style = Stroke(width = 7f, cap = StrokeCap.Round),
+                )
+
+                // Blue segmented middle band.
+                drawCircle(
+                    color = Color(0xFF4CA8D1),
+                    center = Offset(cx, cy),
+                    radius = rBlue,
+                    style = Stroke(width = rOuter * 0.105f),
+                )
+                for (i in 0 until 36) {
+                    val angle = Math.toRadians(i * 10.0 + 5.0)
+                    val inner = rBlue * 0.88f
+                    val outer = rBlue * 1.02f
+                    drawLine(
+                        color = Color(0xFF93EFFF),
+                        start = Offset(cx + cos(angle).toFloat() * inner, cy + sin(angle).toFloat() * inner),
+                        end = Offset(cx + cos(angle).toFloat() * outer, cy + sin(angle).toFloat() * outer),
+                        strokeWidth = 1.5f,
+                    )
+                }
+
+                // Inner bright ring.
+                drawCircle(
+                    color = Color(0xFFB6FAFF),
+                    center = Offset(cx, cy),
+                    radius = rInner,
+                    style = Stroke(width = 4.5f),
+                )
+                drawCircle(
+                    color = Color(0xFF235C69),
+                    center = Offset(cx, cy),
+                    radius = rInner * 0.91f,
+                    style = Stroke(width = 1.5f),
+                )
+
+                // Yellow telemetry arc from the reference.
+                drawArc(
+                    color = Color(0xFFF3D33A),
+                    startAngle = 146f,
+                    sweepAngle = 112f,
+                    useCenter = false,
+                    topLeft = Offset(cx - rInner * 1.05f, cy - rInner * 1.05f),
+                    size = androidx.compose.ui.geometry.Size(rInner * 2.1f, rInner * 2.1f),
+                    style = Stroke(width = 4f, cap = StrokeCap.Round),
+                )
+
+                // Animated listening/speaking waveform inside the core.
                 val path = Path()
-                val waveWidth = radius * 1.7f
-                for (i in 0..80) {
-                    val x = center.x - waveWidth / 2f + waveWidth * i / 80
-                    val y = center.y + sin(i * 0.55f + pulse * 6f) * if (active) 8f else 2f
+                val waveWidth = rCore * 1.65f
+                for (i in 0..96) {
+                    val x = cx - waveWidth / 2f + waveWidth * i / 96f
+                    val amplitude = when {
+                        listening -> 12f + 8f * sin(i * 0.8f + sweep / 18f)
+                        speaking -> 15f + 10f * sin(i * 0.55f + sweep / 14f)
+                        initiating -> 7f
+                        else -> 2.5f
+                    }
+                    val y = cy + sin(i * 0.55f + sweep / 20f) * amplitude
                     if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
                 }
-                drawPath(path = path, color = JarvisBlue, style = Stroke(width = 2.5f, cap = StrokeCap.Round))
+                drawPath(
+                    path,
+                    color = Color(0xFF58E9FF),
+                    style = Stroke(width = if (active) 3f else 1.8f, cap = StrokeCap.Round),
+                )
+
+                // Core rings.
+                drawCircle(
+                    color = Color(0xFF4DDCFF),
+                    center = Offset(cx, cy),
+                    radius = rCore,
+                    style = Stroke(width = 2.5f),
+                )
+                drawCircle(
+                    color = Color(0xFF183E47),
+                    center = Offset(cx, cy),
+                    radius = rCore * 0.83f,
+                    style = Stroke(width = 1.2f),
+                )
             }
 
             Text(
                 "J.A.R.V.I.S.",
-                color = Color(0xFFE7FCFF),
-                fontSize = 22.sp,
+                color = Color.White,
+                fontSize = 25.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 2.sp,
+                letterSpacing = 2.6.sp,
             )
         }
     }

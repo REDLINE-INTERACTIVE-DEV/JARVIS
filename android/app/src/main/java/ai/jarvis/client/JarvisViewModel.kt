@@ -35,13 +35,27 @@ data class JarvisUiState(
 
 class JarvisViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("jarvis", Context.MODE_PRIVATE)
-    private val _state = MutableStateFlow(JarvisUiState(endpoint = prefs.getString("endpoint", BuildConfig.DEFAULT_API_BASE_URL) ?: BuildConfig.DEFAULT_API_BASE_URL))
+    private val _state = MutableStateFlow(JarvisUiState(endpoint = sanitizeSavedEndpoint()))
     val state: StateFlow<JarvisUiState> = _state.asStateFlow()
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
             while (true) { checkConnection(); kotlinx.coroutines.delay(15_000) }
         }
+    }
+
+    private fun sanitizeSavedEndpoint(): String {
+        val saved = prefs.getString("endpoint", null)?.trim()?.trimEnd('/')
+        val staleLoopback = saved.isNullOrBlank() ||
+            saved.equals("/127.0.0.1:8000", ignoreCase = true) ||
+            saved.equals("127.0.0.1:8000", ignoreCase = true) ||
+            saved.equals("http://127.0.0.1:8000", ignoreCase = true) ||
+            saved.equals("http://localhost:8000", ignoreCase = true)
+        if (staleLoopback) {
+            prefs.edit().remove("endpoint").apply()
+            return BuildConfig.DEFAULT_API_BASE_URL
+        }
+        return saved
     }
 
     fun setInput(value: String) { _state.value = _state.value.copy(input = value, error = null) }
@@ -96,11 +110,16 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun candidateEndpoints(endpoint: String): List<String> {
         val normalized = endpoint.trim().trimEnd('/')
-        val candidates = linkedSetOf(normalized)
-        if (normalized == BuildConfig.DEFAULT_API_BASE_URL) {
-            candidates += "http://127.0.0.1:8000"
-            discoverLanEndpoint()?.let { candidates += it }
-        }
+        val loopback = normalized.equals("/127.0.0.1:8000", true) ||
+            normalized.equals("127.0.0.1:8000", true) ||
+            normalized.equals("http://127.0.0.1:8000", true) ||
+            normalized.equals("http://localhost:8000", true)
+        val candidates = linkedSetOf<String>()
+        if (!loopback && normalized.isNotBlank()) candidates += normalized
+        candidates += BuildConfig.DEFAULT_API_BASE_URL
+        discoverLanEndpoint()?.let { candidates += it }
+        // Emulator fallback; on a physical phone this will simply fail quickly.
+        candidates += "http://127.0.0.1:8000"
         return candidates.toList()
     }
 
