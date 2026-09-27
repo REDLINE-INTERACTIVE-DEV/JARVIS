@@ -71,4 +71,3 @@ jobs:
         with:
           name: jarvis-desktop-windows
           path: dist/JARVIS.exe
-}
