@@ -159,11 +159,9 @@ class WakeWordService : Service() {
     private fun candidateEndpoints(): List<String> {
         val prefs = getSharedPreferences("jarvis", MODE_PRIVATE)
         val configured = (prefs.getString("endpoint", BuildConfig.DEFAULT_API_BASE_URL) ?: BuildConfig.DEFAULT_API_BASE_URL).trimEnd('/')
-        val candidates = linkedSetOf(configured)
-        if (configured == BuildConfig.DEFAULT_API_BASE_URL) {
-            candidates += "http://127.0.0.1:8000"
-            discoverLanEndpoint()?.let { candidates += it }
-        }
+        val candidates = linkedSetOf<String>()
+        if (configured.isNotBlank()) candidates += configured
+        discoverLanEndpoint()?.let { candidates += it }
         return candidates.toList()
     }
 

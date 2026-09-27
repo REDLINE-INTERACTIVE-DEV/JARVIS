@@ -8,8 +8,8 @@ class WakePhraseMatcherTest {
     @Test
     fun accepts_jarvis_and_hey_jarvis_forms() {
         assertNull(WakePhraseMatcher.match("hello there"))
-        assertEquals(null, WakePhraseMatcher.match("jarvis"))
-        assertEquals(null, WakePhraseMatcher.match("Hey JARVIS"))
+        assertEquals(null, WakePhraseMatcher.match("jarvis")?.command)
+        assertEquals(null, WakePhraseMatcher.match("Hey JARVIS")?.command)
         assertEquals("open my calendar", WakePhraseMatcher.match("JARVIS, open my calendar")?.command)
         assertEquals("open my calendar", WakePhraseMatcher.match("hey jarvis open my calendar")?.command)
         assertEquals("what is the time", WakePhraseMatcher.match("JARVIS: what is the time")?.command)

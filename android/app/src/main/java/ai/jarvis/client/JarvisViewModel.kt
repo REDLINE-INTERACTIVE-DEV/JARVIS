@@ -88,10 +88,6 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         val message = _state.value.input.trim()
         if (message.isEmpty() || _state.value.busy) return
         val endpoint = _state.value.endpoint.trim().trimEnd('/')
-        if (!endpoint.startsWith("http://") && !endpoint.startsWith("https://")) {
-            _state.value = _state.value.copy(error = "API endpoint must start with http:// or https://")
-            return
-        }
         _state.value = _state.value.copy(input = "", messages = _state.value.messages + ChatMessage(message, true), busy = true, error = null, listening = false)
         viewModelScope.launch(Dispatchers.IO) {
             val result = try { postWithRetry(endpoint, message) } catch (error: Exception) { Result.failure(error) }
@@ -116,10 +112,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             normalized.equals("http://localhost:8000", true)
         val candidates = linkedSetOf<String>()
         if (!loopback && normalized.isNotBlank()) candidates += normalized
-        candidates += BuildConfig.DEFAULT_API_BASE_URL
         discoverLanEndpoint()?.let { candidates += it }
-        // Emulator fallback; on a physical phone this will simply fail quickly.
-        candidates += "http://127.0.0.1:8000"
+        if (BuildConfig.DEFAULT_API_BASE_URL.isNotBlank()) candidates += BuildConfig.DEFAULT_API_BASE_URL
         return candidates.toList()
     }
 
@@ -204,7 +198,6 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun checkConnection() {
         val endpoint = _state.value.endpoint.trim().trimEnd('/')
-        if (!endpoint.startsWith("http://") && !endpoint.startsWith("https://")) { _state.value = _state.value.copy(connected = false, connectionChecking = false); return }
         _state.value = _state.value.copy(connectionChecking = true)
         for (candidate in candidateEndpoints(endpoint)) {
             try {
