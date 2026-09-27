@@ -14,7 +14,7 @@ from .screen import ScreenBridge
 from .device_registry import DeviceRegistry
 
 def create_app(memory=None, brain=None, tools=None, research=None):
-    app = FastAPI(title="JARVIS Local API", version="0.11.0")
+    app = FastAPI(title="JARVIS Local API", version="0.12.0")
     memory = memory or MemoryStore()
     brain = brain or BrainRuntime()
     tools = tools or ToolRegistry()
