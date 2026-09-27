@@ -8,7 +8,6 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
 import android.content.pm.PackageManager
-import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import androidx.activity.ComponentActivity
@@ -115,7 +114,6 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     override fun onDestroy() {
         try { unregisterReceiver(wakeReceiver) } catch (_: Exception) {}
-        recognizer?.destroy()
         tts?.stop()
         tts?.shutdown()
         super.onDestroy()

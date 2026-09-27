@@ -12,8 +12,8 @@ android {
         applicationId = "ai.jarvis.client"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.9.0"
+        versionCode = 10
+        versionName = "0.10.0"
         buildConfigField("String", "DEFAULT_API_BASE_URL", """")
     }
 
