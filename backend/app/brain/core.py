@@ -33,16 +33,20 @@ class LocalBrain:
         if self.model_path and Path(self.model_path).is_file():
             try:
                 from llama_cpp import Llama
-                self._llm = Llama(model_path=self.model_path, n_ctx=self._context_size(), verbose=False)
+                self._llm = Llama(
+                    model_path=self.model_path,
+                    n_ctx=self._context_size(),
+                    verbose=False,
+                )
             except Exception:
                 self._llm = None
 
     @staticmethod
     def _context_size() -> int:
         try:
-            value = int(os.getenv("JARVIS_CTX", "4096"))
+            value = int(os.getenv("JARVIS_CTX", "8192"))
         except ValueError:
-            value = 4096
+            value = 8192
         return max(512, min(value, 32768))
 
     @property
@@ -51,15 +55,21 @@ class LocalBrain:
 
     @staticmethod
     def _memory_context(memories: list[dict[str, Any]]) -> str:
-        recent = memories[-8:]
+        recent = memories[-40:]
         return "\n".join(
             f"{item.get('kind', 'memory')}: {item.get('content', '')}"
-            for item in recent if item.get("content")
+            for item in recent
+            if item.get("content")
         )
 
     def _build_prompt(self, message: str, memories: list[dict[str, Any]]) -> str:
         context = self._memory_context(memories)
-        return f"{self.IDENTITY}\n\nRelevant memory and recent conversation:\n{context or '(none)'}\n\nUser: {message}\nJARVIS:"
+        return (
+            f"{self.IDENTITY}\n\n"
+            f"Relevant long-term memory and recent conversation:\n"
+            f"{context or '(none)'}\n\n"
+            f"User: {message}\nJARVIS:"
+        )
 
     def respond(self, message: str, memories: list[dict[str, Any]]) -> str:
         message = message.strip()
@@ -67,7 +77,11 @@ class LocalBrain:
             return "Please say something and I'll respond."
         if self._llm is not None:
             try:
-                result = self._llm(self._build_prompt(message, memories), max_tokens=512, stop=["\nUser:", "\nJARVIS:"])
+                result = self._llm(
+                    self._build_prompt(message, memories),
+                    max_tokens=700,
+                    stop=["\nUser:", "\nJARVIS:"],
+                )
                 choices = result.get("choices", [])
                 answer = choices[0].get("text", "").strip() if choices else ""
                 if answer:
@@ -76,19 +90,40 @@ class LocalBrain:
                 pass
         return f"Local foundation mode is active. You said: {message}"
 
-    def answer_with_research(self, message: str, memories: list[dict[str, Any]], results: list[dict[str, str]]) -> str:
+    def answer_with_research(
+        self,
+        message: str,
+        memories: list[dict[str, Any]],
+        results: list[dict[str, str]],
+    ) -> str:
         if not results:
             return "I searched the web, but I couldn't find usable results."
-        context = "\n".join(f"- {x['title']} | {x['url']} | {x['snippet']}" for x in results)
+        context = "\n".join(
+            f"- {x['title']} | {x['url']} | {x['snippet']}" for x in results
+        )
+        memory = self._memory_context(memories)
         if self._llm is None:
-            return "I found these results:\n" + "\n".join(f"{i + 1}. {x['title']} — {x['url']}" for i, x in enumerate(results))
+            return (
+                "I found these results:\n"
+                + "\n".join(
+                    f"{i + 1}. {x['title']} — {x['url']}"
+                    for i, x in enumerate(results)
+                )
+            )
         prompt = (
-            f"{self.IDENTITY}\n\nUse ONLY the supplied web results for current factual claims. "
-            f"Separate sourced facts from reasoning and mention relevant source URLs.\n\n"
+            f"{self.IDENTITY}\n\n"
+            f"Use ONLY the supplied web results for current factual claims. "
+            f"Separate sourced facts from reasoning and mention relevant source URLs. "
+            f"Use conversation memory for continuity without inventing facts.\n\n"
+            f"Memory:\n{memory or '(none)'}\n\n"
             f"User: {message}\n\nSearch results:\n{context}\n\nJARVIS:"
         )
         try:
-            result = self._llm(prompt, max_tokens=700, stop=["\nUser:", "\nJARVIS:"])
+            result = self._llm(
+                prompt,
+                max_tokens=900,
+                stop=["\nUser:", "\nJARVIS:"],
+            )
             choices = result.get("choices", [])
             answer = choices[0].get("text", "").strip() if choices else ""
             if answer:

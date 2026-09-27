@@ -38,8 +38,10 @@ class BrainRuntime:
 
     @staticmethod
     def _int_env(name: str, default: int, low: int, high: int) -> int:
-        try: value = int(os.getenv(name, str(default)))
-        except ValueError: value = default
+        try:
+            value = int(os.getenv(name, str(default)))
+        except ValueError:
+            value = default
         return max(low, min(value, high))
 
     @property
@@ -57,9 +59,12 @@ class BrainRuntime:
         async with self._semaphore:
             self._requests += 1
             if self.url:
-                try: return await self._server_chat(message, memories)
-                except Exception: self._failures += 1
-            try: return await asyncio.to_thread(self.brain.respond, message, memories)
+                try:
+                    return await self._server_chat(message, memories)
+                except Exception:
+                    self._failures += 1
+            try:
+                return await asyncio.to_thread(self.brain.respond, message, memories)
             except Exception:
                 self._failures += 1
                 raise
@@ -67,35 +72,83 @@ class BrainRuntime:
     async def multitask(self, request: str, memories: list[dict[str, Any]]) -> list[dict[str, str]]:
         goals = self.coordinator.split_goals(request)
         if len(goals) <= 1:
-            return [{"goal_id": "1", "goal": request.strip(), "status": "completed", "result": await self.respond(request, memories)}]
+            return [{
+                "goal_id": "1",
+                "goal": request.strip(),
+                "status": "completed",
+                "result": await self.respond(request, memories),
+            }]
 
         async def worker(goal: Goal) -> str:
             return await self.respond(goal.text, memories)
 
         return await self.coordinator.run(goals, worker)
 
-    async def answer_with_research(self, message: str, memories: list[dict[str, Any]], results: list[dict[str, str]]) -> str:
+    async def answer_with_research(
+        self,
+        message: str,
+        memories: list[dict[str, Any]],
+        results: list[dict[str, str]],
+    ) -> str:
         async with self._semaphore:
             if self.url:
                 try:
-                    context = "\n".join(f"- {x['title']} | {x['url']} | {x['snippet']}" for x in results)
-                    prompt = f"{self.brain.IDENTITY}\n\nUse only supplied search results for current facts.\n\nUser: {message}\n\nSearch results:\n{context}"
+                    memory = "\n".join(
+                        f"{x.get('kind', 'memory')}: {x.get('content', '')}"
+                        for x in memories[-40:]
+                        if x.get("content")
+                    ) or "(none)"
+                    context = "\n".join(
+                        f"- {x['title']} | {x['url']} | {x['snippet']}" for x in results
+                    )
+                    prompt = (
+                        f"{self.brain.IDENTITY}\n\n"
+                        f"Use only supplied search results for current facts. "
+                        f"Use the supplied conversation memory for continuity, but do not invent facts.\n\n"
+                        f"Relevant conversation memory:\n{memory}\n\n"
+                        f"User: {message}\n\nSearch results:\n{context}"
+                    )
                     return await self._server_prompt(prompt, 700)
-                except Exception: self._failures += 1
-            return await asyncio.to_thread(self.brain.answer_with_research, message, memories, results)
+                except Exception:
+                    self._failures += 1
+            return await asyncio.to_thread(
+                self.brain.answer_with_research, message, memories, results
+            )
 
     async def _server_chat(self, message: str, memories: list[dict[str, Any]]) -> str:
-        memory = "\n".join(f"{x.get('kind', 'memory')}: {x.get('content', '')}" for x in memories[-8:] if x.get("content")) or "(none)"
-        prompt = f"{self.brain.IDENTITY}\n\nRelevant memory:\n{memory}\n\nUser: {message}\nJARVIS:"
-        return await self._server_prompt(prompt, 512)
+        memory = "\n".join(
+            f"{x.get('kind', 'memory')}: {x.get('content', '')}"
+            for x in memories[-40:]
+            if x.get("content")
+        ) or "(none)"
+        prompt = (
+            f"{self.brain.IDENTITY}\n\n"
+            f"Relevant long-term conversation memory:\n{memory}\n\n"
+            f"User: {message}\nJARVIS:"
+        )
+        return await self._server_prompt(prompt, 700)
 
     async def _server_prompt(self, prompt: str, max_tokens: int) -> str:
-        endpoint = self.url if self.url.endswith("/chat/completions") else self.url + "/v1/chat/completions"
-        payload = {"model": self.model, "messages": [{"role": "system", "content": self.brain.IDENTITY}, {"role": "user", "content": prompt}], "max_tokens": max_tokens, "temperature": 0.35, "stream": False}
+        endpoint = (
+            self.url
+            if self.url.endswith("/chat/completions")
+            else self.url + "/v1/chat/completions"
+        )
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": self.brain.IDENTITY},
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": 0.35,
+            "stream": False,
+        }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(endpoint, json=payload)
             response.raise_for_status()
             data = response.json()
         answer = data["choices"][0]["message"]["content"].strip()
-        if not answer: raise RuntimeError("brain returned an empty response")
+        if not answer:
+            raise RuntimeError("brain returned an empty response")
         return answer
