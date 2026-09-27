@@ -7,19 +7,26 @@ plugins {
 android {
     namespace = "ai.jarvis.client"
     compileSdk = 35
+
     defaultConfig {
         applicationId = "ai.jarvis.client"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.8.0"
-        buildConfigField("String", "DEFAULT_API_BASE_URL", "\"\"\"")
+        versionCode = 9
+        versionName = "0.9.0"
+        buildConfigField("String", "DEFAULT_API_BASE_URL", "\"\"")
     }
-    buildFeatures { compose = true; buildConfig = true }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
     kotlinOptions {
         jvmTarget = "17"
     }
