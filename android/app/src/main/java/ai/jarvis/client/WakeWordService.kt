@@ -85,7 +85,7 @@ class WakeWordService : Service() {
     }
 
     private fun handlePhrase(raw: String) {
-        val phrase = raw.trim().replace(Regex("\s+"), " ")
+        val phrase = raw.trim().replace(Regex("""\s+"""), " ")
         val wakeMatch = WakePhraseMatcher.match(phrase)
 
         if (wakeMatch != null) {
