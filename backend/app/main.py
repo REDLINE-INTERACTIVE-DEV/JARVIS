@@ -179,6 +179,11 @@ def create_app(memory=None, brain=None, tools=None, research=None):
         marked=memory.mark_events_reported([e["id"] for e in events])
         return {"response":response,"event_count":marked,"event_ids":[e["id"] for e in events]}
 
+    @app.post("/search")
+    async def search(req: SearchRequest):
+        results = [item.as_dict() for item in research.search(req.query, req.limit)]
+        return {"query": req.query, "results": results}
+
     @app.get("/memory")
     async def get_memory(limit:int=20):
         return {"items":memory.recent(limit)}
