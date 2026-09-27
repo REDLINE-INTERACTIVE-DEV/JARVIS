@@ -32,17 +32,16 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "8.9"
-      - name: Verify Gradle
-        run: gradle --version
+      - run: gradle --version
       - name: Build Android debug APK and unit tests
         run: gradle --no-daemon -p android :app:testDebugUnitTest :app:assembleDebug
       - name: Rename Android APK
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk "JARVIS-v0.10.0.apk"
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk "JARVIS-v0.11.0.apk"
       - name: Upload Android APK
         uses: actions/upload-artifact@v7
         with:
-          name: JARVIS-Android-v0.10.0
-          path: JARVIS-v0.10.0.apk
+          name: JARVIS-Android-v0.11.0
+          path: JARVIS-v0.11.0.apk
 
   desktop-linux:
     runs-on: ubuntu-latest
