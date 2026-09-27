@@ -43,6 +43,15 @@ def create_app(memory=None, brain=None, tools=None, research=None):
         external_id: str = Field(default="", max_length=500)
         created_at: str | None = None
 
+    class SyncPushRequest(BaseModel):
+        device_id: str = Field(min_length=1, max_length=200)
+        events: list[EventRequest] = Field(default_factory=list, max_length=500)
+
+    class SyncCursorRequest(BaseModel):
+        provider: str = Field(min_length=1, max_length=100)
+        account_id: str = Field(default="", max_length=300)
+        cursor: str = Field(min_length=1, max_length=1000)
+
     class SearchRequest(BaseModel):
         query: str = Field(min_length=1, max_length=500)
         limit: int = Field(default=5, ge=1, le=100)
