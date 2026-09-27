@@ -22,7 +22,7 @@ class RuntimeStats:
 
 
 class BrainRuntime:
-    """Route fast work locally and model work through independent parallel slots."""
+    """Route fast work locally and model work through bounded parallel slots."""
 
     def __init__(self, brain: LocalBrain | None = None) -> None:
         self.brain = brain or LocalBrain()
@@ -46,16 +46,27 @@ class BrainRuntime:
 
     @property
     def provider(self) -> str:
-        return "llama.cpp-server" if self.url else self.brain.provider
+        if self.url:
+            return "llama.cpp-server"
+        return self.brain.provider
 
     def stats(self) -> RuntimeStats:
-        return RuntimeStats(self.provider, self.max_concurrency, self._requests, self._failures)
+        return RuntimeStats(
+            self.provider,
+            self.max_concurrency,
+            self._requests,
+            self._failures,
+        )
 
     async def respond(self, message: str, memories: list[dict[str, Any]]) -> str:
         message = message.strip()
+        if not message:
+            return "Please say something and I'll respond."
+
         fast = self.fastpath.try_answer(message)
         if fast is not None:
             return fast
+
         async with self._semaphore:
             self._requests += 1
             if self.url:
@@ -63,21 +74,19 @@ class BrainRuntime:
                     return await self._server_chat(message, memories)
                 except Exception:
                     self._failures += 1
+
             try:
                 return await asyncio.to_thread(self.brain.respond, message, memories)
             except Exception:
                 self._failures += 1
-                raise
+                return "I hit an internal brain error, but the JARVIS service is still running."
 
-    async def multitask(self, request: str, memories: list[dict[str, Any]]) -> list[dict[str, str]]:
+    async def multitask(
+        self, request: str, memories: list[dict[str, Any]]
+    ) -> list[dict[str, str]]:
         goals = self.coordinator.split_goals(request)
-        if len(goals) <= 1:
-            return [{
-                "goal_id": "1",
-                "goal": request.strip(),
-                "status": "completed",
-                "result": await self.respond(request, memories),
-            }]
+        if not goals:
+            return []
 
         async def worker(goal: Goal) -> str:
             return await self.respond(goal.text, memories)
@@ -93,53 +102,59 @@ class BrainRuntime:
         async with self._semaphore:
             if self.url:
                 try:
-                    memory = "\n".join(
-                        f"{x.get('kind', 'memory')}: {x.get('content', '')}"
-                        for x in memories[-40:]
-                        if x.get("content")
-                    ) or "(none)"
+                    memory = self._memory_context(memories)
                     context = "\n".join(
-                        f"- {x['title']} | {x['url']} | {x['snippet']}" for x in results
-                    )
+                        f"- {x.get('title', '')} | {x.get('url', '')} | {x.get('snippet', '')}"
+                        for x in results
+                    ) or "(none)"
                     prompt = (
                         f"{self.brain.IDENTITY}\n\n"
-                        f"Use only supplied search results for current facts. "
-                        f"Use the supplied conversation memory for continuity, but do not invent facts.\n\n"
-                        f"Relevant conversation memory:\n{memory}\n\n"
-                        f"User: {message}\n\nSearch results:\n{context}"
+                        "Use only the supplied search results for current factual claims. "
+                        "Use memory for continuity and do not invent tool results.\n\n"
+                        f"Memory:\n{memory}\n\nUser: {message}\n\n"
+                        f"Search results:\n{context}\n\nJARVIS:"
                     )
                     return await self._server_prompt(prompt, 700)
                 except Exception:
                     self._failures += 1
-            return await asyncio.to_thread(
-                self.brain.answer_with_research, message, memories, results
-            )
+            try:
+                return await asyncio.to_thread(
+                    self.brain.answer_with_research, message, memories, results
+                )
+            except Exception:
+                self._failures += 1
+                return "I found the research, but the response brain could not summarize it."
 
-    async def _server_chat(self, message: str, memories: list[dict[str, Any]]) -> str:
-        memory = "\n".join(
+    @staticmethod
+    def _memory_context(memories: list[dict[str, Any]]) -> str:
+        recent = list(reversed(memories[:40]))
+        return "\n".join(
             f"{x.get('kind', 'memory')}: {x.get('content', '')}"
-            for x in memories[-40:]
+            for x in recent
             if x.get("content")
         ) or "(none)"
-        prompt = (
+
+    async def _server_chat(self, message: str, memories: list[dict[str, Any]]) -> str:
+        return await self._server_prompt(
+            self._build_prompt(message, memories), 700
+        )
+
+    def _build_prompt(self, message: str, memories: list[dict[str, Any]]) -> str:
+        return (
             f"{self.brain.IDENTITY}\n\n"
-            f"Relevant long-term conversation memory:\n{memory}\n\n"
+            f"Relevant conversation memory:\n{self._memory_context(memories)}\n\n"
             f"User: {message}\nJARVIS:"
         )
-        return await self._server_prompt(prompt, 700)
 
     async def _server_prompt(self, prompt: str, max_tokens: int) -> str:
         endpoint = (
             self.url
             if self.url.endswith("/chat/completions")
-            else self.url + "/v1/chat/completions"
+            else f"{self.url}/v1/chat/completions"
         )
         payload = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": self.brain.IDENTITY},
-                {"role": "user", "content": prompt},
-            ],
+            "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens,
             "temperature": 0.35,
             "stream": False,
@@ -148,7 +163,11 @@ class BrainRuntime:
             response = await client.post(endpoint, json=payload)
             response.raise_for_status()
             data = response.json()
-        answer = data["choices"][0]["message"]["content"].strip()
+        choices = data.get("choices") or []
+        if not choices:
+            raise RuntimeError("brain returned no choices")
+        message = choices[0].get("message") or {}
+        answer = str(message.get("content") or "").strip()
         if not answer:
             raise RuntimeError("brain returned an empty response")
         return answer

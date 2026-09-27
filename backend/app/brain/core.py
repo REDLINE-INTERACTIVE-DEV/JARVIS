@@ -55,7 +55,9 @@ class LocalBrain:
 
     @staticmethod
     def _memory_context(memories: list[dict[str, Any]]) -> str:
-        recent = memories[-40:]
+        # MemoryStore returns newest-first. Feed the newest bounded window
+        # chronologically so the model sees the conversation in the right order.
+        recent = list(reversed(memories[:40]))
         return "\n".join(
             f"{item.get('kind', 'memory')}: {item.get('content', '')}"
             for item in recent
