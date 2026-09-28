@@ -204,8 +204,10 @@ class WakeWordService : Service() {
     private fun candidateEndpoints(): List<String> {
         val configured = (prefs.getString("endpoint", BuildConfig.DEFAULT_API_BASE_URL) ?: BuildConfig.DEFAULT_API_BASE_URL).trimEnd('/')
         val candidates = linkedSetOf<String>()
-        if (configured.isNotBlank()) candidates += configured
+        if (RuntimeEndpointResolver.isUsable(configured)) candidates += configured
+        RuntimeEndpointResolver.bootstrapEndpoint()?.let { candidates += it }
         discoverLanEndpoint()?.let { candidates += it }
+        if (RuntimeEndpointResolver.isUsable(BuildConfig.DEFAULT_API_BASE_URL)) candidates += BuildConfig.DEFAULT_API_BASE_URL
         return candidates.toList()
     }
 

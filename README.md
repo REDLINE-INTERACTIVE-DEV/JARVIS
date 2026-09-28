@@ -32,7 +32,8 @@ Install `backend/requirements-llama.txt`, provide a compatible GGUF model, and s
 Use `POST /search` with a query, or say `search for <query>`, `search: <query>`, or `look up <query>` in chat. The default provider is DuckDuckGo's public HTML results and requires no API key. Set `JARVIS_SEARCH_URL` to point at a compatible search endpoint if you want to replace it.
 
 ## Android
-Emulator default: `http://10.0.2.2:8000`. On a physical phone, set the API endpoint in the app to the backend machine's LAN address.
+The Android client does not use `127.0.0.1`, `localhost`, or emulator-only `10.0.2.2` as its runtime backend. It resolves the backend in this order: saved verified endpoint, `runtime-endpoint.json` bootstrap configuration, LAN discovery on port 8000, then the compiled default (if supplied). This allows a Railway/public backend URL to change without rebuilding the APK.
+Bootstrap document: `https://raw.githubusercontent.com/REDLINE-INTERACTIVE-DEV/JARVIS/main/runtime-endpoint.json`.
 
 ## Desktop
 Set `JARVIS_API` or use the API button. Optional voice adapters are in `desktop/voice.py`; install `desktop/requirements-voice.txt` on a compatible machine.

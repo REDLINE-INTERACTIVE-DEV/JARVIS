@@ -40,8 +40,7 @@ class JarvisScreenService : AccessibilityService() {
     override fun onInterrupt() {}
 
     private fun baseUrl() =
-        (prefs.getString("endpoint", BuildConfig.DEFAULT_API_BASE_URL)
-            ?: BuildConfig.DEFAULT_API_BASE_URL).trimEnd('/')
+        (ai.jarvis.client.RuntimeEndpointResolver.resolve(prefs, BuildConfig.DEFAULT_API_BASE_URL) ?: "").trimEnd('/')
 
     private fun register() {
         executor.execute {

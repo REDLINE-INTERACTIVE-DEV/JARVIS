@@ -50,13 +50,9 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun sanitizeSavedEndpoint(): String {
         val saved = prefs.getString("endpoint", null)?.trim()?.trimEnd('/')
-        val staleLoopback = saved.isNullOrBlank() ||
-            saved.equals("/127.0.0.1:8000", ignoreCase = true) ||
-            saved.equals("127.0.0.1:8000", ignoreCase = true) ||
-            saved.equals("http://127.0.0.1:8000", ignoreCase = true) ||
-            saved.equals("http://localhost:8000", ignoreCase = true)
-        if (staleLoopback) { prefs.edit().remove("endpoint").apply(); return BuildConfig.DEFAULT_API_BASE_URL }
-        return saved
+        val staleLoopback = saved != null && !RuntimeEndpointResolver.isUsable(saved)
+        if (staleLoopback) prefs.edit().remove("endpoint").apply()
+        return RuntimeEndpointResolver.resolve(prefs, BuildConfig.DEFAULT_API_BASE_URL) ?: ""
     }
 
     fun setInput(value: String) { _state.value = _state.value.copy(input = value, error = null) }
@@ -98,9 +94,10 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         val normalized=endpoint.trim().trimEnd('/')
         val loopback=normalized.equals("/127.0.0.1:8000",true)||normalized.equals("127.0.0.1:8000",true)||normalized.equals("http://127.0.0.1:8000",true)||normalized.equals("http://localhost:8000",true)
         val candidates=linkedSetOf<String>()
-        if(!loopback&&normalized.isNotBlank()) candidates+=normalized
+        if(!loopback&&RuntimeEndpointResolver.isUsable(normalized)) candidates+=normalized
+        RuntimeEndpointResolver.bootstrapEndpoint()?.let{candidates+=it}
         discoverLanEndpoint()?.let{candidates+=it}
-        if(BuildConfig.DEFAULT_API_BASE_URL.isNotBlank()) candidates+=BuildConfig.DEFAULT_API_BASE_URL
+        if(RuntimeEndpointResolver.isUsable(BuildConfig.DEFAULT_API_BASE_URL)) candidates+=BuildConfig.DEFAULT_API_BASE_URL
         return candidates.toList()
     }
 

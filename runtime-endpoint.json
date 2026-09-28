@@ -1,0 +1,5 @@
+{
+  "endpoint": "",
+  "health_path": "/health",
+  "chat_path": "/chat"
+}
