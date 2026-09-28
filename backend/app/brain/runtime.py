@@ -1,12 +1,10 @@
-"""High-throughput independent JARVIS brain runtime."""
+"""Private JARVIS brain runtime."""
 from __future__ import annotations
 
 import asyncio
 import os
 from dataclasses import dataclass
 from typing import Any
-
-import httpx
 
 from .core import LocalBrain
 from .fastpath import FastPath
@@ -22,16 +20,17 @@ class RuntimeStats:
 
 
 class BrainRuntime:
-    """Route fast work locally and model work through bounded parallel slots."""
+    """Run JARVIS through the user's private local brain only.
+
+    No third-party LLM fallback is used. Web research is a separate tool path;
+    response synthesis is performed by LocalBrain.
+    """
 
     def __init__(self, brain: LocalBrain | None = None) -> None:
         self.brain = brain or LocalBrain()
         self.fastpath = FastPath()
         self.coordinator = MultiTaskCoordinator()
-        self.url = os.getenv("JARVIS_LLM_URL", "").strip().rstrip("/")
-        self.model = os.getenv("JARVIS_LLM_MODEL", "jarvis")
         self.max_concurrency = self._int_env("JARVIS_BRAIN_CONCURRENCY", 8, 1, 64)
-        self.timeout = self._int_env("JARVIS_BRAIN_TIMEOUT", 45, 5, 180)
         self._semaphore = asyncio.Semaphore(self.max_concurrency)
         self._requests = 0
         self._failures = 0
@@ -46,128 +45,42 @@ class BrainRuntime:
 
     @property
     def provider(self) -> str:
-        if self.url:
-            return "llama.cpp-server"
         return self.brain.provider
 
     def stats(self) -> RuntimeStats:
-        return RuntimeStats(
-            self.provider,
-            self.max_concurrency,
-            self._requests,
-            self._failures,
-        )
+        return RuntimeStats(self.provider, self.max_concurrency, self._requests, self._failures)
 
     async def respond(self, message: str, memories: list[dict[str, Any]]) -> str:
         message = message.strip()
         if not message:
             return "Please say something and I'll respond."
-
         fast = self.fastpath.try_answer(message)
         if fast is not None:
             return fast
-
         async with self._semaphore:
             self._requests += 1
-            if self.url:
-                try:
-                    return await self._server_chat(message, memories)
-                except Exception:
-                    self._failures += 1
-
             try:
                 return await asyncio.to_thread(self.brain.respond, message, memories)
             except Exception:
                 self._failures += 1
                 return "I hit an internal brain error, but the JARVIS service is still running."
 
-    async def multitask(
-        self, request: str, memories: list[dict[str, Any]]
-    ) -> list[dict[str, str]]:
+    async def multitask(self, request: str, memories: list[dict[str, Any]]) -> list[dict[str, str]]:
         goals = self.coordinator.split_goals(request)
         if not goals:
             return []
-
         async def worker(goal: Goal) -> str:
             return await self.respond(goal.text, memories)
-
         return await self.coordinator.run(goals, worker)
 
     async def answer_with_research(
-        self,
-        message: str,
-        memories: list[dict[str, Any]],
-        results: list[dict[str, str]],
+        self, message: str, memories: list[dict[str, Any]], results: list[dict[str, str]]
     ) -> str:
         async with self._semaphore:
-            if self.url:
-                try:
-                    memory = self._memory_context(memories)
-                    context = "\n".join(
-                        f"- {x.get('title', '')} | {x.get('url', '')} | {x.get('snippet', '')}"
-                        for x in results
-                    ) or "(none)"
-                    prompt = (
-                        f"{self.brain.IDENTITY}\n\n"
-                        "Use only the supplied search results for current factual claims. "
-                        "Use memory for continuity and do not invent tool results.\n\n"
-                        f"Memory:\n{memory}\n\nUser: {message}\n\n"
-                        f"Search results:\n{context}\n\nJARVIS:"
-                    )
-                    return await self._server_prompt(prompt, 700)
-                except Exception:
-                    self._failures += 1
             try:
                 return await asyncio.to_thread(
                     self.brain.answer_with_research, message, memories, results
                 )
             except Exception:
                 self._failures += 1
-                return "I found the research, but the response brain could not summarize it."
-
-    @staticmethod
-    def _memory_context(memories: list[dict[str, Any]]) -> str:
-        recent = list(reversed(memories[:40]))
-        return "\n".join(
-            f"{x.get('kind', 'memory')}: {x.get('content', '')}"
-            for x in recent
-            if x.get("content")
-        ) or "(none)"
-
-    async def _server_chat(self, message: str, memories: list[dict[str, Any]]) -> str:
-        return await self._server_prompt(
-            self._build_prompt(message, memories), 700
-        )
-
-    def _build_prompt(self, message: str, memories: list[dict[str, Any]]) -> str:
-        return (
-            f"{self.brain.IDENTITY}\n\n"
-            f"Relevant conversation memory:\n{self._memory_context(memories)}\n\n"
-            f"User: {message}\nJARVIS:"
-        )
-
-    async def _server_prompt(self, prompt: str, max_tokens: int) -> str:
-        endpoint = (
-            self.url
-            if self.url.endswith("/chat/completions")
-            else f"{self.url}/v1/chat/completions"
-        )
-        payload = {
-            "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": max_tokens,
-            "temperature": 0.35,
-            "stream": False,
-        }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(endpoint, json=payload)
-            response.raise_for_status()
-            data = response.json()
-        choices = data.get("choices") or []
-        if not choices:
-            raise RuntimeError("brain returned no choices")
-        message = choices[0].get("message") or {}
-        answer = str(message.get("content") or "").strip()
-        if not answer:
-            raise RuntimeError("brain returned an empty response")
-        return answer
+                return "I found the research, but the private JARVIS brain could not summarize it."
