@@ -122,3 +122,53 @@ def test_health_exposes_runtime_capacity(tmp_path):
     response = make_client(tmp_path).get("/health")
     assert response.status_code == 200
     assert response.json()["brain_concurrency"] >= 1
+
+
+def test_runtime_lifecycle_wakes_and_sleeps(tmp_path):
+    from backend.app.lifecycle import RuntimeLifecycle
+    runtime = RuntimeLifecycle(str(tmp_path / "runtime.json"))
+    assert runtime.status()["state"] == "sleeping"
+    runtime.wake("chat")
+    assert runtime.status()["state"] == "awake"
+    runtime.sleep()
+    assert runtime.status()["state"] == "sleeping"
+
+
+def test_runtime_lifecycle_blocks_sleep_during_task(tmp_path):
+    from backend.app.lifecycle import RuntimeLifecycle
+    runtime = RuntimeLifecycle(str(tmp_path / "runtime.json"))
+    runtime.begin_task()
+    try:
+        runtime.sleep()
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("active task must prevent sleep")
+    runtime.finish_task()
+    assert runtime.status()["state"] == "sleeping"
+
+
+def test_runtime_lifecycle_is_restart_safe(tmp_path):
+    from backend.app.lifecycle import RuntimeLifecycle
+    path = str(tmp_path / "runtime.json")
+    RuntimeLifecycle(path).begin_task()
+    second = RuntimeLifecycle(path)
+    assert second.status()["state"] == "sleeping"
+    assert second.status()["active_tasks"] == 0
+
+
+def test_runtime_catchup_does_not_claim_events(tmp_path):
+    client = make_client(tmp_path)
+    event = {"source_device":"phone","event_type":"message","title":"New message","content":"hello"}
+    assert client.post("/events", json=event).status_code == 200
+    first = client.post("/runtime/catchup").json()
+    second = client.post("/runtime/catchup").json()
+    assert first["event_count"] == second["event_count"] == 1
+    assert first["claimed"] is False
+
+
+def test_runtime_endpoints(tmp_path):
+    client = make_client(tmp_path)
+    assert client.get("/runtime/status").json()["state"] == "sleeping"
+    assert client.post("/runtime/wake", json={"reason":"voice"}).json()["state"] == "awake"
+    assert client.post("/runtime/sleep").json()["state"] == "sleeping"

@@ -12,6 +12,7 @@ from .tools import ToolRegistry
 from .voice import VoiceState
 from .screen import ScreenBridge
 from .device_registry import DeviceRegistry
+from .lifecycle import RuntimeLifecycle
 
 def create_app(memory=None, brain=None, tools=None, research=None):
     app = FastAPI(title="JARVIS Local API", version="0.12.0")
@@ -23,6 +24,7 @@ def create_app(memory=None, brain=None, tools=None, research=None):
     tasks = TaskEngine(tools.call)
     screen = ScreenBridge()
     devices = DeviceRegistry()
+    runtime = RuntimeLifecycle()
 
     def device_id(value: str | None) -> str:
         return (value or "unknown-device").strip()[:200]
@@ -110,6 +112,27 @@ def create_app(memory=None, brain=None, tools=None, research=None):
         action: str = Field(min_length=1, max_length=30)
         arguments: dict[str, object] = Field(default_factory=dict)
 
+    class RuntimeWakeRequest(BaseModel):
+        reason: str = Field(default="request", max_length=200)
+
+    @app.get("/runtime/status")
+    async def runtime_status():
+        return runtime.status()
+
+    @app.post("/runtime/wake")
+    async def runtime_wake(req: RuntimeWakeRequest):
+        return runtime.wake(req.reason.strip() or "request")
+
+    @app.post("/runtime/sleep")
+    async def runtime_sleep():
+        try: return runtime.sleep()
+        except RuntimeError as exc: raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/runtime/catchup")
+    async def runtime_catchup(limit: int = 100):
+        events = memory.pending_events(max(1, min(limit, 500)))
+        return {"events": events, "event_count": len(events), "claimed": False}
+
     @app.get("/health")
     async def health():
         data = {"status":"ok","brain":brain.provider,"brain_concurrency":1,"reasoning_concurrency":reasoning.max_concurrency,"robot_capacity":5,"research":"duckduckgo-html","memory":"sqlite"}
@@ -125,6 +148,7 @@ def create_app(memory=None, brain=None, tools=None, research=None):
     @app.post("/chat")
     async def chat(req: ChatRequest, x_jarvis_device: str | None = Header(default=None)):
         source = device_id(x_jarvis_device)
+        runtime.wake("chat")
         message=req.message.strip()
         memory.add(f"user:{source}", message)
         if research.should_search(message):
@@ -210,10 +234,14 @@ def create_app(memory=None, brain=None, tools=None, research=None):
     async def run_task(req: TaskRequest, x_jarvis_device: str | None = Header(default=None)):
         source = device_id(x_jarvis_device)
         memory.add(f"task:user:{source}", req.message)
-        async def responder(message): return await answer(message)
-        result = await tasks.run_async(req.message,responder=responder,confirmed=req.confirmed)
-        memory.add(f"task:result:{source}", str(result))
-        return result
+        runtime.begin_task()
+        try:
+            async def responder(message): return await answer(message)
+            result = await tasks.run_async(req.message,responder=responder,confirmed=req.confirmed)
+            memory.add(f"task:result:{source}", str(result))
+            return result
+        finally:
+            runtime.finish_task()
 
     async def robot_worker(job): return await answer(f"Robot {job.robot_id} job: {job.command}")
     fleet=RobotFleetCoordinator(robot_worker,reasoning=reasoning); mission=MissionSupervisor(robot_worker,reasoning=reasoning,fleet=fleet)
