@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from time import time
 from typing import Awaitable, Callable
 from ..reasoning import ReasoningEngine, ReasoningStep, StepStatus
+from .safety import can_dispatch
 
 @dataclass(frozen=True)
 class RobotJob:
@@ -21,15 +22,12 @@ class RobotState:
     updated_at: float = field(default_factory=time)
 
 class RobotFleetCoordinator:
-    """Coordinate up to five robots through dependency-aware reasoning."""
+    """Coordinate up to five robots and fail closed without safe telemetry."""
     MAX_ROBOTS = 5
 
     def __init__(self, worker: Callable[[RobotJob], Awaitable[str]], reasoning: ReasoningEngine | None = None, max_concurrency: int | None = None):
         self._worker = worker
-        if reasoning is not None:
-            self._reasoning = reasoning
-        else:
-            self._reasoning = ReasoningEngine(max_concurrency=max_concurrency or self.MAX_ROBOTS)
+        self._reasoning = reasoning or ReasoningEngine(max_concurrency=max_concurrency or self.MAX_ROBOTS)
         self._states: dict[str, RobotState] = {}
 
     def states(self) -> list[RobotState]:
@@ -55,17 +53,41 @@ class RobotFleetCoordinator:
             robot_id = step.step_id.removeprefix("robot:")
             job = next(job for job in jobs if job.robot_id == robot_id)
             state = self._state(robot_id)
-            state.status = "executing"; state.last_command = job.command; state.sequence += 1; state.updated_at = time()
+            state.last_command = job.command
+            state.sequence += 1
+            state.updated_at = time()
+            if not can_dispatch(state.telemetry):
+                state.status = "blocked"
+                state.last_result = (
+                    "dispatch blocked by safety policy: telemetry must explicitly confirm "
+                    "connected=true, healthy=true, and emergency_stop=false"
+                )
+                state.updated_at = time()
+                raise RuntimeError(state.last_result)
+            state.status = "executing"
+            state.updated_at = time()
             try:
                 result = await self._worker(job)
             except Exception as exc:
-                state.status = "failed"; state.last_result = str(exc); state.updated_at = time(); raise
-            state.status = "completed"; state.last_result = result; state.updated_at = time()
+                state.status = "failed"
+                state.last_result = str(exc)
+                state.updated_at = time()
+                raise
+            state.status = "completed"
+            state.last_result = result
+            state.updated_at = time()
             return result
 
         completed = await self._reasoning.execute(plan, run_step)
         by_id = {step.step_id.removeprefix("robot:"): step for step in completed.steps}
-        return [{"robot_id": job.robot_id, "status": "completed" if by_id[job.robot_id].status == StepStatus.COMPLETED else "failed", "result": by_id[job.robot_id].result} for job in jobs]
+        return [
+            {
+                "robot_id": job.robot_id,
+                "status": "completed" if by_id[job.robot_id].status == StepStatus.COMPLETED else "failed",
+                "result": by_id[job.robot_id].result,
+            }
+            for job in jobs
+        ]
 
     def _state(self, robot_id: str) -> RobotState:
         robot_id = robot_id.strip()

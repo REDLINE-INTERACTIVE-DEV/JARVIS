@@ -3,6 +3,8 @@ import asyncio
 from backend.app.missions import MissionSupervisor
 from backend.app.robots import RobotFleetCoordinator, RobotJob
 
+SAFE_TELEMETRY = {"connected": True, "healthy": True, "emergency_stop": False, "status": "ok"}
+
 
 def test_mission_supervisor_verifies_completed_fleet():
     async def worker(job):
@@ -12,10 +14,10 @@ def test_mission_supervisor_verifies_completed_fleet():
     async def run():
         fleet = RobotFleetCoordinator(worker)
         supervisor = MissionSupervisor(worker, fleet=fleet)
-        report = await supervisor.run(
-            "coordinate a five-unit inspection",
-            [RobotJob(f"r{i}", "hold position") for i in range(1, 6)],
-        )
+        jobs = [RobotJob(f"r{i}", "hold position") for i in range(1, 6)]
+        for job in jobs:
+            supervisor.update_telemetry(job.robot_id, SAFE_TELEMETRY)
+        report = await supervisor.run("coordinate a five-unit inspection", jobs)
         assert report.verified is True
         assert report.failed_robots == []
         assert report.telemetry_issues == []
@@ -26,26 +28,51 @@ def test_mission_supervisor_verifies_completed_fleet():
     asyncio.run(run())
 
 
-def test_mission_supervisor_marks_bad_telemetry_unverified():
+def test_mission_supervisor_blocks_missing_telemetry():
+    calls = []
+
     async def worker(job):
+        calls.append(job.robot_id)
         return f"ack:{job.robot_id}"
 
     async def run():
         fleet = RobotFleetCoordinator(worker)
         supervisor = MissionSupervisor(worker, fleet=fleet)
-        report = await supervisor.run(
-            "inspect fleet",
-            [RobotJob("r1", "hold position")],
-        )
-        assert report.verified is True
+        report = await supervisor.run("inspect fleet", [RobotJob("r1", "hold position")])
+        assert report.verified is False
+        assert report.failed_robots == ["r1"]
+        assert any("telemetry unavailable" in issue for issue in report.telemetry_issues)
+        assert calls == []
 
-        supervisor.update_telemetry(
-            "r1", {"healthy": False, "status": "fault", "error": "motor sensor"}
-        )
-        states = {state.robot_id: state for state in supervisor.states()}
-        issues = supervisor._telemetry_issues(states["r1"])
-        assert len(issues) == 3
-        assert any("healthy=false" in issue for issue in issues)
+    asyncio.run(run())
+
+
+def test_mission_supervisor_marks_unsafe_telemetry_unverified():
+    calls = []
+
+    async def worker(job):
+        calls.append(job.robot_id)
+        return f"ack:{job.robot_id}"
+
+    async def run():
+        fleet = RobotFleetCoordinator(worker)
+        supervisor = MissionSupervisor(worker, fleet=fleet)
+        supervisor.update_telemetry("r1", SAFE_TELEMETRY)
+        first = await supervisor.run("inspect fleet", [RobotJob("r1", "hold position")])
+        assert first.verified is True
+        supervisor.update_telemetry("r1", {
+            "connected": True,
+            "healthy": False,
+            "emergency_stop": False,
+            "status": "fault",
+            "error": "motor sensor",
+        })
+        second = await supervisor.run("inspect fleet again", [RobotJob("r1", "hold position")])
+        assert second.verified is False
+        assert second.failed_robots == ["r1"]
+        assert len(second.telemetry_issues) == 3
+        assert any("healthy is not confirmed true" in issue for issue in second.telemetry_issues)
+        assert calls == ["r1"]
 
     asyncio.run(run())
 

@@ -113,7 +113,10 @@ def test_robot_dispatch_runs_jobs_concurrently(tmp_path):
         return job.command.upper()
     async def run():
         fleet = RobotFleetCoordinator(worker, max_concurrency=4)
-        return await fleet.dispatch([RobotJob(str(i), "ping") for i in range(4)])
+        jobs = [RobotJob(str(i), "ping") for i in range(4)]
+        for job in jobs:
+            fleet.update_telemetry(job.robot_id, {"connected": True, "healthy": True, "emergency_stop": False, "status": "ok"})
+        return await fleet.dispatch(jobs)
     results = asyncio.run(run())
     assert len(results) == 4
     assert all(item["status"] == "completed" for item in results)
