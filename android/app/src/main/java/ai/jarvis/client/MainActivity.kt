@@ -124,6 +124,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private fun JarvisApp(vm: JarvisViewModel) {
         val state by vm.state.collectAsState()
         val context = LocalContext.current
+        var showEndpointDialog by remember { mutableStateOf(false) }
+        var endpointDraft by remember(state.endpoint) { mutableStateOf(state.endpoint) }
 
         LaunchedEffect(state.speakToken) {
             if (state.speakToken > 0) state.lastAssistantText?.let { speak(it) }
@@ -150,6 +152,83 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    if (showEndpointDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showEndpointDialog = false },
+                            title = { Text("Connect JARVIS") },
+                            text = {
+                                Column {
+                                    Text(
+                                        "Paste the base URL of your JARVIS backend. You can configure this later when your cloud server is ready. The private GGUF model is not bundled in this app.",
+                                        color = Color(0xFFD8F8FF),
+                                    )
+                                    Spacer(Modifier.height(10.dp))
+                                    OutlinedTextField(
+                                        value = endpointDraft,
+                                        onValueChange = { endpointDraft = it },
+                                        label = { Text("Backend URL") },
+                                        placeholder = { Text("https://your-tunnel.example") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                    state.error?.let {
+                                        Spacer(Modifier.height(6.dp))
+                                        Text(it, color = Color(0xFFFFB4A8), fontSize = 12.sp)
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        if (vm.setEndpoint(endpointDraft)) {
+                                            vm.refreshConnection()
+                                            showEndpointDialog = false
+                                        }
+                                    },
+                                ) { Text("SAVE & TEST") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showEndpointDialog = false }) {
+                                    Text("CANCEL")
+                                }
+                            },
+                        )
+                    }
+
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "JARVIS",
+                            color = JarvisBlue,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 2.sp,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            when {
+                                state.connectionChecking -> "CONNECTING"
+                                state.connected -> "ONLINE"
+                                else -> "OFFLINE"
+                            },
+                            color = when {
+                                state.connected -> Color(0xFF76F7C5)
+                                state.connectionChecking -> JarvisBlue
+                                else -> Color(0xFF8BAAB0)
+                            },
+                            fontSize = 10.sp,
+                            letterSpacing = 1.2.sp,
+                        )
+                        TextButton(
+                            onClick = {
+                                endpointDraft = state.endpoint
+                                showEndpointDialog = true
+                            },
+                        ) { Text("API", fontWeight = FontWeight.Bold) }
+                    }
+
                     Spacer(Modifier.height(8.dp))
 
                     JarvisHud(

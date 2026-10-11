@@ -44,7 +44,11 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            while (true) { checkConnection(); kotlinx.coroutines.delay(15_000) }
+            checkConnection()
+            while (true) {
+                kotlinx.coroutines.delay(15_000)
+                if (_state.value.endpoint.isNotBlank()) checkConnection()
+            }
         }
     }
 
@@ -56,7 +60,23 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun setInput(value: String) { _state.value = _state.value.copy(input = value, error = null) }
-    fun setEndpoint(value: String) { _state.value = _state.value.copy(endpoint = value.trimEnd('/'), error = null, connected = false) }
+    fun setEndpoint(value: String): Boolean {
+        val endpoint = value.trim().trimEnd('/')
+        if (endpoint.isNotBlank() && !RuntimeEndpointResolver.isUsable(endpoint)) {
+            _state.value = _state.value.copy(
+                error = "Enter a valid HTTP or HTTPS backend URL. Do not use localhost on your phone.",
+                connected = false,
+            )
+            return false
+        }
+        if (endpoint.isBlank()) {
+            prefs.edit().remove("endpoint").apply()
+        } else {
+            prefs.edit().putString("endpoint", endpoint).apply()
+        }
+        _state.value = _state.value.copy(endpoint = endpoint, error = null, connected = false)
+        return true
+    }
     fun setListening(active: Boolean) { _state.value = _state.value.copy(listening = active) }
     fun setInitiating() { _state.value = _state.value.copy(listening = false, busy = true, error = null) }
     fun setError(value: String?) { _state.value = _state.value.copy(error = value) }

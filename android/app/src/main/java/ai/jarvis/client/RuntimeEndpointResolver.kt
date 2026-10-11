@@ -38,6 +38,8 @@ object RuntimeEndpointResolver {
         if (!(value.startsWith("http://") || value.startsWith("https://"))) return false
         if (value.contains("127.0.0.1") || value.contains("localhost")) return false
         if (value == "http://10.0.2.2:8000") return false
+        val parsed = try { URL(value) } catch (_: Exception) { return false }
+        if (parsed.host.isBlank() || parsed.protocol !in setOf("http", "https")) return false
         return true
     }
 }
