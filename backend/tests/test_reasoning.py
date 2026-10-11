@@ -42,7 +42,10 @@ def test_five_robot_dispatch_is_concurrent_and_stateful():
 
     async def run():
         fleet = RobotFleetCoordinator(worker)
-        return await fleet.dispatch([RobotJob(str(i), "ping") for i in range(5)]), fleet.states()
+        jobs = [RobotJob(str(i), "ping") for i in range(5)]
+        for job in jobs:
+            fleet.update_telemetry(job.robot_id, {"connected": True, "healthy": True, "emergency_stop": False, "status": "ok"})
+        return await fleet.dispatch(jobs), fleet.states()
 
     results, states = asyncio.run(run())
     assert len(results) == 5
