@@ -41,7 +41,8 @@ def test_failed_goal_does_not_erase_sibling_result():
 
 def test_brain_has_independent_identity():
     brain = LocalBrain()
-    prompt = brain._build_prompt("hello", [{"kind": "memory", "content": "likes robots"}])
-    assert "You are JARVIS" in prompt
-    assert "independent personal AI" in prompt
-    assert "likes robots" in prompt
+    messages = brain._messages("hello", [{"kind": "memory", "content": "likes robots"}])
+    assert "You are JARVIS" in messages[0]["content"]
+    assert "independent personal AI" in messages[0]["content"]
+    assert "likes robots" in messages[1]["content"]
+    assert "hello" in messages[1]["content"]

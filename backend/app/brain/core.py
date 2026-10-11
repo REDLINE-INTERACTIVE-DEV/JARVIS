@@ -11,7 +11,7 @@ class Brain(Protocol):
 
 class LocalBrain:
     """Private JARVIS brain. Inference stays inside this JARVIS process."""
-    IDENTITY = """You are JARVIS, a private personal AI assistant and intelligent task orchestrator.
+    IDENTITY = """You are JARVIS, an independent personal AI assistant and intelligent task orchestrator.
 
 Personality:
 - Calm, composed, exceptionally capable, concise and naturally conversational.
@@ -77,7 +77,7 @@ Aim for the calm, intelligent, proactive feel of a fictional high-end science-fi
                 answer = choices[0].get("message", {}).get("content", "").strip() if choices else ""
                 if answer: return answer
             except Exception: pass
-        return "My local language model is not loaded yet. The JARVIS service is online, but I need the private GGUF brain configured."
+        return "My private language model is not loaded yet. The JARVIS service is online, but I need the private GGUF brain configured."
     def answer_with_research(self, message, memories, results):
         if not results: return "I searched the web, but I couldn't find usable results."
         if self._llm is None:
