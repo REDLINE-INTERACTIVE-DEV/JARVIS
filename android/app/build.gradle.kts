@@ -13,7 +13,7 @@ android {
         targetSdk = 35
         versionCode = 12
         versionName = "0.12.0"
-        buildConfigField("String", "DEFAULT_API_BASE_URL", "\"\"")
+        buildConfigField("String", "DEFAULT_API_BASE_URL", "\"\\\"\\\"")
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
@@ -32,4 +32,5 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

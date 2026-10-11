@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -54,9 +55,9 @@ class JarvisScreenService : AccessibilityService() {
         executor.execute {
             try {
                 val raw = get("/screen/actions/$deviceId")
-                Regex("""{"action_id":(d+),"action":"([^"]+)","arguments":({.*?})""")
-                    .findAll(raw)
-                    .forEach { executeAction(it.groupValues[2], it.groupValues[3]) }
+                ScreenActionParser.parseActions(raw).forEach { action ->
+                    executeAction(action.action, action.arguments)
+                }
             } catch (_: Exception) {}
         }
         handler.postDelayed({ poll() }, 350)
@@ -116,21 +117,21 @@ class JarvisScreenService : AccessibilityService() {
         }
     }
 
-    private fun executeAction(action: String, arguments: String) {
+    private fun executeAction(action: String, arguments: JSONObject) {
         when (action) {
             "tap", "click" -> {
-                val x = jsonNumber(arguments, "x") ?: return
-                val y = jsonNumber(arguments, "y") ?: return
+                val x = ScreenActionParser.number(arguments, "x") ?: return
+                val y = ScreenActionParser.number(arguments, "y") ?: return
                 tap(x, y)
             }
             "swipe" -> {
-                val x1 = jsonNumber(arguments, "x1") ?: return
-                val y1 = jsonNumber(arguments, "y1") ?: return
-                val x2 = jsonNumber(arguments, "x2") ?: return
-                val y2 = jsonNumber(arguments, "y2") ?: return
+                val x1 = ScreenActionParser.number(arguments, "x1") ?: return
+                val y1 = ScreenActionParser.number(arguments, "y1") ?: return
+                val x2 = ScreenActionParser.number(arguments, "x2") ?: return
+                val y2 = ScreenActionParser.number(arguments, "y2") ?: return
                 swipe(x1, y1, x2, y2)
             }
-            "type" -> typeText(jsonString(arguments, "text") ?: return)
+            "type" -> typeText(ScreenActionParser.string(arguments, "text") ?: return)
             "back" -> performGlobalAction(GLOBAL_ACTION_BACK)
             "home" -> performGlobalAction(GLOBAL_ACTION_HOME)
             "recents" -> performGlobalAction(GLOBAL_ACTION_RECENTS)
@@ -155,14 +156,6 @@ class JarvisScreenService : AccessibilityService() {
             .build()
         dispatchGesture(gesture, null, null)
     }
-
-    private fun jsonNumber(json: String, key: String): Float? =
-        Regex("""["']?$key["']?s*:s*(-?d+(?:.d+)?)""")
-            .find(json)?.groupValues?.get(1)?.toFloatOrNull()
-
-    private fun jsonString(json: String, key: String): String? =
-        Regex("""["']?$key["']?s*:s*"((?:\.|[^"])*)"""")
-            .find(json)?.groupValues?.get(1)
 
     private fun typeText(text: String) {
         val node = rootInActiveWindow ?: return
