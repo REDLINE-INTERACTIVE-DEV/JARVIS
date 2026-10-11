@@ -27,8 +27,8 @@ class ScreenActionParserTest {
     }
 
     @Test fun preservesEscapedTypeText() {
-        val action = ScreenActionParser.parseActions("""{"actions":[{"action":"type","arguments":{"text":"Hello \"JARVIS\""}}]}""").single()
-        assertEquals("""Hello "JARVIS"""", ScreenActionParser.string(action.arguments, "text"))
+        val action = ScreenActionParser.parseActions("""{"actions":[{"action":"type","arguments":{"text":"Hello \\"JARVIS\\""}}]}""").single()
+        assertEquals("Hello \"JARVIS\"", ScreenActionParser.string(action.arguments, "text"))
     }
 
     @Test fun ignoresItemsWithoutAnAction() {
