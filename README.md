@@ -1,3 +1,4 @@
+MADE BY YASHASVI RAJ SHAHI 
 # JARVIS — Your private local-first personal AI
 
 JARVIS is a standalone personal assistant designed around a private local language-model brain and a cinematic, proactive assistant experience.
