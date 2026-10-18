@@ -38,8 +38,7 @@ class RuntimeLifecycle:
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(asdict(self._state), f, indent=2, sort_keys=True)
-                f.write("
-")
+                f.write("\n")
             os.replace(tmp, self.path)
         finally:
             try: os.unlink(tmp)

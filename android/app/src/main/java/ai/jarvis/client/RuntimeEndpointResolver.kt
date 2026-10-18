@@ -30,8 +30,10 @@ object RuntimeEndpointResolver {
         } catch (_: Exception) { null }
     }
 
+    // JARVIS must use only the explicitly configured Kaggle brain endpoint.
+    // No bootstrap, LAN scan, or compiled-default fallback is allowed.
     fun resolve(prefs: SharedPreferences, compiledDefault: String): String? =
-        savedEndpoint(prefs) ?: bootstrapEndpoint() ?: compiledDefault.trim().trimEnd('/').takeIf(::isUsable)
+        savedEndpoint(prefs)
 
     fun isUsable(endpoint: String): Boolean {
         val value = endpoint.trim().trimEnd('/')
