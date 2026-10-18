@@ -263,155 +263,142 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         initiating: Boolean,
         onClick: () -> Unit,
     ) {
-        val transition = rememberInfiniteTransition(label = "jarvis-hud")
-        val pulse by transition.animateFloat(
-            initialValue = 0.97f,
-            targetValue = 1.03f,
-            animationSpec = infiniteRepeatable(
-                tween(900),
-                RepeatMode.Reverse,
-            ),
-            label = "hud-pulse",
-        )
-        val sweep by transition.animateFloat(
+        val transition = rememberInfiniteTransition(label = "jarvis-visualizer")
+        val phase by transition.animateFloat(
             initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(tween(3200)),
-            label = "hud-sweep",
+            targetValue = (2f * Math.PI).toFloat(),
+            animationSpec = infiniteRepeatable(tween(1800)),
+            label = "visualizer-phase",
+        )
+        val haloAlpha by transition.animateFloat(
+            initialValue = 0.12f,
+            targetValue = 0.24f,
+            animationSpec = infiniteRepeatable(tween(1400), RepeatMode.Reverse),
+            label = "visualizer-halo",
         )
         val active = listening || speaking || initiating
 
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(390.dp)
+                .height(360.dp)
                 .clickable(enabled = !initiating, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
             Canvas(Modifier.fillMaxSize()) {
                 val cx = size.width / 2f
                 val cy = size.height / 2f
-                val maxR = minOf(size.width * 0.48f, size.height * 0.47f)
-                val scale = if (active) pulse else 1f
-                val rOuter = maxR * scale
-                val rBlue = rOuter * 0.79f
-                val rInner = rOuter * 0.60f
-                val rCore = rOuter * 0.45f
+                val maxR = minOf(size.width * 0.37f, size.height * 0.39f)
+                val rOuter = maxR * 0.91f
+                val rMid = rOuter * 0.79f
+                val rInner = rOuter * 0.61f
+                val rCore = rOuter * 0.43f
 
-                // Outer HUD ring.
+                // Soft halo changes intensity, but the emblem and rings never move.
                 drawCircle(
-                    color = Color(0xFF65F3FF),
+                    color = Color(0xFF12BFEA).copy(alpha = haloAlpha),
                     center = Offset(cx, cy),
-                    radius = rOuter,
-                    style = Stroke(width = 3.2f),
+                    radius = rOuter * 1.23f,
                 )
 
-                // Outer segmented ticks, matching the reference HUD silhouette.
-                for (i in 0 until 72) {
-                    val angle = Math.toRadians(i * 5.0)
-                    val long = i % 6 == 0
-                    val inner = rOuter * (if (long) 0.88f else 0.925f)
-                    val outer = rOuter * 0.975f
+                // Fixed outer frame.
+                drawCircle(
+                    color = Color(0xFF2D91AD).copy(alpha = if (active) 0.95f else 0.55f),
+                    center = Offset(cx, cy),
+                    radius = rOuter,
+                    style = Stroke(width = 2.2f),
+                )
+                drawArc(
+                    color = Color(0xFF65F3FF),
+                    startAngle = 205f,
+                    sweepAngle = 64f,
+                    useCenter = false,
+                    topLeft = Offset(cx - rOuter, cy - rOuter),
+                    size = androidx.compose.ui.geometry.Size(rOuter * 2f, rOuter * 2f),
+                    style = Stroke(width = 5f, cap = StrokeCap.Round),
+                )
+                drawArc(
+                    color = Color(0xFF65F3FF),
+                    startAngle = 28f,
+                    sweepAngle = 54f,
+                    useCenter = false,
+                    topLeft = Offset(cx - rOuter, cy - rOuter),
+                    size = androidx.compose.ui.geometry.Size(rOuter * 2f, rOuter * 2f),
+                    style = Stroke(width = 5f, cap = StrokeCap.Round),
+                )
+
+                // Music-player style radial beats sit OUTSIDE the fixed emblem.
+                // These are state-driven animations, not microphone amplitude readings.
+                for (i in 0 until 64) {
+                    val angle = Math.toRadians(i * (360.0 / 64.0) - 90.0)
+                    val rhythm = kotlin.math.abs(sin(i * 0.63f + phase * 1.7f))
+                    val length = when {
+                        listening -> 7f + rhythm * 15f
+                        speaking -> 9f + rhythm * 19f
+                        initiating -> 5f + rhythm * 9f
+                        else -> 3f + rhythm * 3f
+                    }
+                    val startR = rOuter * 1.045f
+                    val endR = startR + length
+                    val beatColor = when {
+                        speaking -> Color(0xFF80F7FF)
+                        listening -> Color(0xFF4DDCFF)
+                        initiating -> Color(0xFF399AB7)
+                        else -> Color(0xFF246477)
+                    }
                     drawLine(
-                        color = if (active && i % 9 == 0) Color.White else Color(0xFF74EFFF),
+                        color = beatColor.copy(alpha = if (active) 0.98f else 0.55f),
                         start = Offset(
-                            cx + cos(angle).toFloat() * inner,
-                            cy + sin(angle).toFloat() * inner,
+                            cx + cos(angle).toFloat() * startR,
+                            cy + sin(angle).toFloat() * startR,
                         ),
                         end = Offset(
-                            cx + cos(angle).toFloat() * outer,
-                            cy + sin(angle).toFloat() * outer,
+                            cx + cos(angle).toFloat() * endR,
+                            cy + sin(angle).toFloat() * endR,
                         ),
-                        strokeWidth = if (long) 2.5f else 1.3f,
+                        strokeWidth = if (i % 4 == 0) 3.2f else 1.8f,
                         cap = StrokeCap.Round,
                     )
                 }
 
-                // Outer HUD brackets / broken arcs.
-                drawArc(
-                    color = Color(0xFF73F4FF),
-                    startAngle = 198f,
-                    sweepAngle = 112f,
-                    useCenter = false,
-                    topLeft = Offset(cx - rOuter, cy - rOuter),
-                    size = androidx.compose.ui.geometry.Size(rOuter * 2f, rOuter * 2f),
-                    style = Stroke(width = 8f, cap = StrokeCap.Round),
-                )
-                drawArc(
-                    color = Color(0xFF73F4FF),
-                    startAngle = 8f,
-                    sweepAngle = 105f,
-                    useCenter = false,
-                    topLeft = Offset(cx - rOuter, cy - rOuter),
-                    size = androidx.compose.ui.geometry.Size(rOuter * 2f, rOuter * 2f),
-                    style = Stroke(width = 7f, cap = StrokeCap.Round),
-                )
-
-                // Blue segmented middle band.
+                // Static precision rings; no scale, rotation, or translation animation.
                 drawCircle(
-                    color = Color(0xFF4CA8D1),
+                    color = Color(0xFF438BA5),
                     center = Offset(cx, cy),
-                    radius = rBlue,
-                    style = Stroke(width = rOuter * 0.105f),
+                    radius = rMid,
+                    style = Stroke(width = rOuter * 0.075f),
                 )
-                for (i in 0 until 36) {
-                    val angle = Math.toRadians(i * 10.0 + 5.0)
-                    val inner = rBlue * 0.88f
-                    val outer = rBlue * 1.02f
+                for (i in 0 until 48) {
+                    val angle = Math.toRadians(i * 7.5)
+                    val inner = rMid * 0.91f
+                    val outer = rMid * 1.02f
                     drawLine(
-                        color = Color(0xFF93EFFF),
+                        color = Color(0xFF9BEFFF).copy(alpha = if (i % 4 == 0) 0.85f else 0.36f),
                         start = Offset(cx + cos(angle).toFloat() * inner, cy + sin(angle).toFloat() * inner),
                         end = Offset(cx + cos(angle).toFloat() * outer, cy + sin(angle).toFloat() * outer),
-                        strokeWidth = 1.5f,
+                        strokeWidth = if (i % 4 == 0) 2.1f else 1f,
+                        cap = StrokeCap.Round,
                     )
                 }
-
-                // Inner bright ring.
                 drawCircle(
                     color = Color(0xFFB6FAFF),
                     center = Offset(cx, cy),
                     radius = rInner,
-                    style = Stroke(width = 4.5f),
+                    style = Stroke(width = 3.2f),
                 )
                 drawCircle(
                     color = Color(0xFF235C69),
                     center = Offset(cx, cy),
-                    radius = rInner * 0.91f,
+                    radius = rInner * 0.90f,
                     style = Stroke(width = 1.5f),
                 )
 
-                // Yellow telemetry arc from the reference.
-                drawArc(
-                    color = Color(0xFFF3D33A),
-                    startAngle = 146f,
-                    sweepAngle = 112f,
-                    useCenter = false,
-                    topLeft = Offset(cx - rInner * 1.05f, cy - rInner * 1.05f),
-                    size = androidx.compose.ui.geometry.Size(rInner * 2.1f, rInner * 2.1f),
-                    style = Stroke(width = 4f, cap = StrokeCap.Round),
+                // Small fixed core emblem.
+                drawCircle(
+                    color = Color(0xFF0B222B),
+                    center = Offset(cx, cy),
+                    radius = rCore,
                 )
-
-                // Animated listening/speaking waveform inside the core.
-                val path = Path()
-                val waveWidth = rCore * 1.65f
-                for (i in 0..96) {
-                    val x = cx - waveWidth / 2f + waveWidth * i / 96f
-                    val amplitude = when {
-                        listening -> 12f + 8f * sin(i * 0.8f + sweep / 18f)
-                        speaking -> 15f + 10f * sin(i * 0.55f + sweep / 14f)
-                        initiating -> 7f
-                        else -> 2.5f
-                    }
-                    val y = cy + sin(i * 0.55f + sweep / 20f) * amplitude
-                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                }
-                drawPath(
-                    path,
-                    color = Color(0xFF58E9FF),
-                    style = Stroke(width = if (active) 3f else 1.8f, cap = StrokeCap.Round),
-                )
-
-                // Core rings.
                 drawCircle(
                     color = Color(0xFF4DDCFF),
                     center = Offset(cx, cy),
@@ -419,20 +406,45 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     style = Stroke(width = 2.5f),
                 )
                 drawCircle(
-                    color = Color(0xFF183E47),
+                    color = Color(0xFF1D7187),
                     center = Offset(cx, cy),
-                    radius = rCore * 0.83f,
+                    radius = rCore * 0.82f,
                     style = Stroke(width = 1.2f),
+                )
+                drawArc(
+                    color = Color(0xFFF3D33A),
+                    startAngle = 145f,
+                    sweepAngle = 70f,
+                    useCenter = false,
+                    topLeft = Offset(cx - rCore * 0.91f, cy - rCore * 0.91f),
+                    size = androidx.compose.ui.geometry.Size(rCore * 1.82f, rCore * 1.82f),
+                    style = Stroke(width = 2.5f, cap = StrokeCap.Round),
                 )
             }
 
-            Text(
-                "J.A.R.V.I.S.",
-                color = Color.White,
-                fontSize = 25.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 2.6.sp,
-            )
+            // Text is a normal fixed composable layered over the animated ring drawing.
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "J.A.R.V.I.S.",
+                    color = Color.White,
+                    fontSize = 23.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 2.4.sp,
+                )
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    when {
+                        listening -> "LISTENING"
+                        speaking -> "RESPONDING"
+                        initiating -> "PROCESSING"
+                        else -> "READY WHEN YOU ARE"
+                    },
+                    color = Color(0xFF80DFF0),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 1.5.sp,
+                )
+            }
         }
     }
 
