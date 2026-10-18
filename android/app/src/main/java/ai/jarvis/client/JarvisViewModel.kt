@@ -57,6 +57,25 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setInput(value: String) { _state.value = _state.value.copy(input = value, error = null) }
     fun setEndpoint(value: String) { _state.value = _state.value.copy(endpoint = value.trimEnd('/'), error = null, connected = false) }
+
+    fun currentApiToken(): String = prefs.getString("api_token", "").orEmpty()
+
+    fun saveConnection(endpointValue: String, tokenValue: String): Boolean {
+        val endpoint = endpointValue.trim().trimEnd('/')
+        val token = tokenValue.trim()
+        if (!RuntimeEndpointResolver.isUsable(endpoint) || !endpoint.startsWith("https://", ignoreCase = true)) {
+            _state.value = _state.value.copy(error = "Enter a valid public HTTPS backend URL.", connected = false)
+            return false
+        }
+        if (token.length < 32) {
+            _state.value = _state.value.copy(error = "The private access token must be at least 32 characters.", connected = false)
+            return false
+        }
+        prefs.edit().putString("endpoint", endpoint).putString("api_token", token).apply()
+        _state.value = _state.value.copy(endpoint = endpoint, error = null, connected = false)
+        refreshConnection()
+        return true
+    }
     fun setListening(active: Boolean) { _state.value = _state.value.copy(listening = active) }
     fun setInitiating() { _state.value = _state.value.copy(listening = false, busy = true, error = null) }
     fun setError(value: String?) { _state.value = _state.value.copy(error = value) }
@@ -166,6 +185,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         val connection=(URL(endpoint+"/chat").openConnection() as HttpURLConnection).apply{
             requestMethod="POST";connectTimeout=10000;readTimeout=60000;doOutput=true
             setRequestProperty("Content-Type","application/json");setRequestProperty("Accept","application/json");setRequestProperty("X-JARVIS-Device",deviceId)
+            prefs.getString("api_token", "")?.takeIf { it.isNotBlank() }?.let { setRequestProperty("X-JARVIS-Token", it) }
         }
         return try{
             val body=JSONObject().put("message",message).toString()

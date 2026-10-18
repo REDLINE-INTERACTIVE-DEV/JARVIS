@@ -88,6 +88,12 @@ class JarvisScreenService : AccessibilityService() {
         handler.postDelayed({ captureLoop() }, 1000)
     }
 
+    private fun applyAuth(connection: HttpURLConnection) {
+        prefs.getString("api_token", "")?.takeIf { it.isNotBlank() }?.let {
+            connection.setRequestProperty("X-JARVIS-Token", it)
+        }
+    }
+
     private fun uploadFrame(bitmap: Bitmap) {
         executor.execute {
             try {
@@ -106,6 +112,7 @@ class JarvisScreenService : AccessibilityService() {
                 connection.readTimeout = 5000
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "image/jpeg")
+                applyAuth(connection)
                 connection.outputStream.use { it.write(bytes) }
                 connection.inputStream.close()
                 connection.disconnect()
@@ -180,6 +187,7 @@ class JarvisScreenService : AccessibilityService() {
         connection.requestMethod = "POST"
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", "application/json")
+        applyAuth(connection)
         connection.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
         connection.inputStream.close()
         connection.disconnect()
@@ -189,6 +197,7 @@ class JarvisScreenService : AccessibilityService() {
         val connection = URL(baseUrl() + path).openConnection() as HttpURLConnection
         connection.connectTimeout = 5000
         connection.readTimeout = 5000
+        applyAuth(connection)
         return connection.inputStream.bufferedReader().use { it.readText() }
             .also { connection.disconnect() }
     }
