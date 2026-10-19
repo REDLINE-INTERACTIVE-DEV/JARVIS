@@ -17,6 +17,17 @@ def test_kaggle_bridge_requires_token_and_serves_existing_chat_api(tmp_path, mon
     denied = client.post("/chat", json={"message": "hello"})
     assert denied.status_code == 401
 
+    # Every API route except the deliberately public health probe is protected.
+    for path in ("/memory", "/voice/states", "/devices", "/screen/devices", "/robots/states"):
+        assert client.get(path).status_code == 401, path
+    assert client.post("/runtime/wake", json={"reason": "test"}).status_code == 401
+    assert client.post("/memory", json={"kind": "test", "content": "secret"}).status_code == 401
+
+    wrong_token = client.post(
+        "/chat", json={"message": "hello"}, headers={"X-JARVIS-Token": "wrong-token"}
+    )
+    assert wrong_token.status_code == 401
+
     accepted = client.post(
         "/chat",
         json={"message": "hello"},

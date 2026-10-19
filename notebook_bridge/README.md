@@ -1,13 +1,13 @@
-# JARVIS Kaggle Gemma bridge (temporary demo)
+# JARVIS Gemma brain connection
 
-This folder connects the **already-loaded** Gemma 4 E4B model in a Kaggle notebook to the existing JARVIS FastAPI backend and Android app. It does not contain model weights or credentials.
+This is the current Gemma-backed JARVIS inference bridge. It connects the **already-loaded** Gemma 4 E4B model in the Kaggle notebook to JARVIS's existing FastAPI, memory, research, task, device, and Android API surfaces. It does not contain model weights or credentials. Gemma is the active brain for this implementation, not a reduced or experimental feature mode.
 
 ## Important limits
 
-- Kaggle sessions are temporary. The app only reaches JARVIS while the notebook, model, API server, and tunnel are running.
+- Kaggle sessions are temporary. The app reaches the active Gemma brain while the notebook, model, API server, and tunnel are running.
 - The public tunnel URL changes when recreated. The access token must stay private.
 - Never commit the tunnel URL plus token, the token itself, notebook output containing the token, or model weights.
-- This is a personal demo, not a permanent or production-hardened hosting setup.
+- The free Kaggle runtime is session-bound and can stop or change its public tunnel URL; that hosting limitation does not restrict the JARVIS feature roadmap. Keep the model server and tunnel running while using the app.
 
 ## Notebook steps
 
@@ -23,7 +23,7 @@ Do not install the repository's full `backend/requirements.txt` in this Python 3
 
 ### 2. Get the bridge code from this repository branch
 
-Use the feature branch while the pull request is under review. After it is merged, change `--branch feat/kaggle-gemma-bridge` to `--branch main`.
+Use the feature branch while the pull request is under review. After it is merged, change `--branch fix/gemma-production-connection` to `--branch main`.
 
 ```python
 import os, sys, subprocess
@@ -106,7 +106,7 @@ Install the Android APK built from this feature branch's GitHub Actions workflow
 - **HTTPS backend URL:** the temporary `https://....trycloudflare.com` URL (no `/chat` suffix).
 - **Private access token:** the token printed in step 3.
 
-Tap **Save**. The app checks `/health` and then sends chat and voice requests with the private `X-JARVIS-Token` header.
+Tap **Save**. The app verifies that `/health` reports the loaded `gemma-4-e4b-it-kaggle` brain, then sends chat and voice requests with the private `X-JARVIS-Token` header. Android encrypts the token with Android Keystore-backed AES-GCM storage.
 
 ## What you must do
 
