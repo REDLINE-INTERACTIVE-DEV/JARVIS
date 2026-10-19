@@ -89,9 +89,10 @@ class JarvisScreenService : AccessibilityService() {
     }
 
     private fun applyAuth(connection: HttpURLConnection) {
-        prefs.getString("api_token", "")?.takeIf { it.isNotBlank() }?.let {
-            connection.setRequestProperty("X-JARVIS-Token", it)
-        }
+        ai.jarvis.client.ApiTokenStore(this).read()
+            .takeIf { it.length >= 32 }?.let {
+                connection.setRequestProperty("X-JARVIS-Token", it)
+            }
     }
 
     private fun uploadFrame(bitmap: Bitmap) {

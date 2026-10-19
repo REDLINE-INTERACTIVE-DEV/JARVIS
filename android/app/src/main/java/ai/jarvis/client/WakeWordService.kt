@@ -182,9 +182,10 @@ class WakeWordService : Service() {
                     setRequestProperty("Content-Type", "application/json")
                     setRequestProperty("Accept", "application/json")
                     setRequestProperty("X-JARVIS-Device", deviceId)
-                    prefs.getString("api_token", "")?.takeIf { it.isNotBlank() }?.let {
-                        setRequestProperty("X-JARVIS-Token", it)
-                    }
+                    ai.jarvis.client.ApiTokenStore(this@WakeWordService).read()
+                        .takeIf { it.length >= 32 }?.let {
+                            setRequestProperty("X-JARVIS-Token", it)
+                        }
                 }
                 try {
                     val body = org.json.JSONObject().put("message", message).toString()
