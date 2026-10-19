@@ -1,6 +1,7 @@
 package ai.jarvis.client.screen
 
 import ai.jarvis.client.BuildConfig
+import ai.jarvis.client.SecureTokenStore
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Bitmap
@@ -54,9 +55,13 @@ class JarvisScreenService : AccessibilityService() {
         executor.execute {
             try {
                 val raw = get("/screen/actions/$deviceId")
-                Regex("""{"action_id":(d+),"action":"([^"]+)","arguments":({.*?})""")
-                    .findAll(raw)
-                    .forEach { executeAction(it.groupValues[2], it.groupValues[3]) }
+                val actions = org.json.JSONObject(raw).optJSONArray("actions") ?: return@execute
+                for (index in 0 until actions.length()) {
+                    val item = actions.optJSONObject(index) ?: continue
+                    val action = item.optString("action")
+                    val arguments = item.optJSONObject("arguments")?.toString() ?: "{}"
+                    if (action.isNotBlank()) executeAction(action, arguments)
+                }
             } catch (_: Exception) {}
         }
         handler.postDelayed({ poll() }, 350)
@@ -89,7 +94,7 @@ class JarvisScreenService : AccessibilityService() {
     }
 
     private fun applyAuth(connection: HttpURLConnection) {
-        prefs.getString("api_token", "")?.takeIf { it.isNotBlank() }?.let {
+        SecureTokenStore.readToken(this).takeIf { it.isNotBlank() }?.let {
             connection.setRequestProperty("X-JARVIS-Token", it)
         }
     }
@@ -164,12 +169,18 @@ class JarvisScreenService : AccessibilityService() {
     }
 
     private fun jsonNumber(json: String, key: String): Float? =
-        Regex("""["']?$key["']?s*:s*(-?d+(?:.d+)?)""")
-            .find(json)?.groupValues?.get(1)?.toFloatOrNull()
+        runCatching {
+            val values = org.json.JSONObject(json)
+            if (!values.has(key) || values.isNull(key)) null
+            else values.optDouble(key).takeIf { it.isFinite() }?.toFloat()
+        }.getOrNull()
 
     private fun jsonString(json: String, key: String): String? =
-        Regex("""["']?$key["']?s*:s*"((?:\.|[^"])*)"""")
-            .find(json)?.groupValues?.get(1)
+        runCatching {
+            val values = org.json.JSONObject(json)
+            if (!values.has(key) || values.isNull(key)) null
+            else values.optString(key).takeIf { it.isNotBlank() }
+        }.getOrNull()
 
     private fun typeText(text: String) {
         val node = rootInActiveWindow ?: return

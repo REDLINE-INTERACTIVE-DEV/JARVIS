@@ -58,12 +58,12 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     fun setInput(value: String) { _state.value = _state.value.copy(input = value, error = null) }
     fun setEndpoint(value: String) { _state.value = _state.value.copy(endpoint = value.trimEnd('/'), error = null, connected = false) }
 
-    fun currentApiToken(): String = prefs.getString("api_token", "").orEmpty()
+    fun currentApiToken(): String = SecureTokenStore.readToken(getApplication())
 
     fun saveConnection(endpointValue: String, tokenValue: String): Boolean {
         val endpoint = endpointValue.trim().trimEnd('/')
         val token = tokenValue.trim()
-        if (!RuntimeEndpointResolver.isUsable(endpoint) || !endpoint.startsWith("https://", ignoreCase = true)) {
+        if (!RuntimeEndpointResolver.isUsable(endpoint)) {
             _state.value = _state.value.copy(error = "Enter a valid public HTTPS backend URL.", connected = false)
             return false
         }
@@ -71,7 +71,11 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             _state.value = _state.value.copy(error = "The private access token must be at least 32 characters.", connected = false)
             return false
         }
-        prefs.edit().putString("endpoint", endpoint).putString("api_token", token).apply()
+        if (!SecureTokenStore.saveToken(getApplication(), token)) {
+            _state.value = _state.value.copy(error = "Android secure storage is unavailable. The token was not saved.", connected = false)
+            return false
+        }
+        prefs.edit().putString("endpoint", endpoint).apply()
         _state.value = _state.value.copy(endpoint = endpoint, error = null, connected = false)
         refreshConnection()
         return true
@@ -127,12 +131,37 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun checkConnection(){
         val endpoint=_state.value.endpoint.trim().trimEnd('/')
+        val token = SecureTokenStore.readToken(getApplication())
         _state.value=_state.value.copy(connectionChecking=true)
+        if (token.isBlank()) {
+            _state.value = _state.value.copy(connected=false, connectionChecking=false)
+            return
+        }
         for(candidate in candidateEndpoints(endpoint)){
             try{
-                val connection=(URL(candidate+"/health").openConnection() as HttpURLConnection).apply{requestMethod="GET";connectTimeout=5000;readTimeout=5000}
-                val status=try{connection.responseCode}finally{connection.disconnect()}
-                if(status in 200..299){_state.value=_state.value.copy(endpoint=candidate,connected=true,connectionChecking=false);return}
+                val connection=(URL(candidate+"/auth/check").openConnection() as HttpURLConnection).apply{
+                    requestMethod="GET";connectTimeout=5000;readTimeout=5000
+                    setRequestProperty("Accept","application/json")
+                    setRequestProperty("X-JARVIS-Token", token)
+                }
+                val status: Int
+                val body: String
+                try {
+                    status = connection.responseCode
+                    val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                    body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                } finally { connection.disconnect() }
+                val json = if (status in 200..299) JSONObject(body) else JSONObject()
+                val authenticated = json.optBoolean("authenticated", false)
+                val correctBrain = json.optString("brain") == "gemma-4-e4b-it-kaggle"
+                if(status in 200..299 && authenticated && correctBrain){
+                    _state.value=_state.value.copy(endpoint=candidate,connected=true,connectionChecking=false,error=null)
+                    return
+                }
+                if (status == 401) {
+                    _state.value = _state.value.copy(error="JARVIS rejected the access token. Recheck Connection settings.", connected=false, connectionChecking=false)
+                    return
+                }
             }catch(_:Exception){}
         }
         _state.value=_state.value.copy(connected=false,connectionChecking=false)
@@ -142,7 +171,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         val connection=(URL(endpoint+"/chat").openConnection() as HttpURLConnection).apply{
             requestMethod="POST";connectTimeout=10000;readTimeout=60000;doOutput=true
             setRequestProperty("Content-Type","application/json");setRequestProperty("Accept","application/json");setRequestProperty("X-JARVIS-Device",deviceId)
-            prefs.getString("api_token", "")?.takeIf { it.isNotBlank() }?.let { setRequestProperty("X-JARVIS-Token", it) }
+            SecureTokenStore.readToken(getApplication()).takeIf { it.isNotBlank() }?.let { setRequestProperty("X-JARVIS-Token", it) }
         }
         return try{
             val body=JSONObject().put("message",message).toString()

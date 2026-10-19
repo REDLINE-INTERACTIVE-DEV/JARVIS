@@ -1,13 +1,13 @@
-# JARVIS Kaggle Gemma bridge (temporary demo)
+# JARVIS Kaggle Gemma brain bridge
 
-This folder connects the **already-loaded** Gemma 4 E4B model in a Kaggle notebook to the existing JARVIS FastAPI backend and Android app. It does not contain model weights or credentials.
+This bridge makes the **already-loaded Gemma 4 E4B model the active JARVIS brain** for the existing API and Android app. It does not contain model weights or credentials.
 
-## Important limits
+## Hosting limits (not feature limits)
 
 - Kaggle sessions are temporary. The app only reaches JARVIS while the notebook, model, API server, and tunnel are running.
 - The public tunnel URL changes when recreated. The access token must stay private.
 - Never commit the tunnel URL plus token, the token itself, notebook output containing the token, or model weights.
-- This is a personal demo, not a permanent or production-hardened hosting setup.
+- Kaggle's session lifetime is a hosting limitation; it does not intentionally reduce JARVIS's app feature set. Keep the notebook session alive while using this endpoint. Security hardening requires HTTPS, encrypted Android token storage, and authenticated connection checks.
 
 ## Notebook steps
 
@@ -106,12 +106,12 @@ Install the Android APK built from this feature branch's GitHub Actions workflow
 - **HTTPS backend URL:** the temporary `https://....trycloudflare.com` URL (no `/chat` suffix).
 - **Private access token:** the token printed in step 3.
 
-Tap **Save**. The app checks `/health` and then sends chat and voice requests with the private `X-JARVIS-Token` header.
+Tap **Save**. The app checks the protected `/auth/check` route to verify both the token and the active Gemma brain, then sends chat and voice requests with the private `X-JARVIS-Token` header. Android stores the token encrypted with an AES key held by Android Keystore.
 
 ## What you must do
 
 1. Keep the Kaggle notebook session running.
 2. Keep the API server and Cloudflare tunnel processes alive.
 3. Enter the current tunnel URL and token in the Android app each time a new tunnel/token is created.
-4. Stop sharing the notebook output: it contains a private token. Regenerate the token and reconnect if it is exposed.
+4. Stop sharing the notebook output: it contains a private token. Clear notebook outputs before sharing the notebook. Regenerate the token and reconnect if it is exposed.
 5. If the Kaggle session ends, restart the model/API/tunnel; this is not 24/7 hosting.
