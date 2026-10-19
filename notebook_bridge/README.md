@@ -2,6 +2,10 @@
 
 This is the current Gemma-backed JARVIS inference bridge. It connects the **already-loaded** Gemma 4 E4B model in the Kaggle notebook to JARVIS's existing FastAPI, memory, research, task, device, and Android API surfaces. It does not contain model weights or credentials. Gemma is the active brain for this implementation, not a reduced or experimental feature mode.
 
+## Before starting the notebook
+
+I verified the connected Kaggle account. Its notebook list contains **Pre trained model** (`yashasvishahi/pre-trained-model`) and `notebookc06c2ae884`; the former contains the Gemma 4 E4B loading and chat-test cells. The pulled saved notebook metadata currently says GPU accelerator and Internet are disabled. Before running the model-loading cell, open Kaggle Notebook options and enable a GPU accelerator and Internet, then confirm that `model` and `processor` load successfully. The saved kernel status is `complete`, not a live running API session.
+
 ## Important limits
 
 - Kaggle sessions are temporary. The app reaches the active Gemma brain while the notebook, model, API server, and tunnel are running.
@@ -11,7 +15,7 @@ This is the current Gemma-backed JARVIS inference bridge. It connects the **alre
 
 ## Notebook steps
 
-Run these cells **after the model has loaded successfully** in `JARVIS_Pretrained_Brain`.
+Run these cells **after the model has loaded successfully** in `Pre trained model (`yashasvishahi/pre-trained-model`)`.
 
 ### 1. Install only the API-server dependencies
 
@@ -32,7 +36,7 @@ repo_dir = "/kaggle/working/JARVIS"
 if not os.path.isdir(repo_dir):
     subprocess.run([
         "git", "clone", "--depth", "1",
-        "--branch", "feat/kaggle-gemma-bridge",
+        "--branch", "fix/gemma-production-connection",
         "https://github.com/REDLINE-INTERACTIVE-DEV/JARVIS.git",
         repo_dir,
     ], check=True)
