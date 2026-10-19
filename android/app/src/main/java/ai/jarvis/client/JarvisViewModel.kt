@@ -36,6 +36,7 @@ data class JarvisUiState(
 
 class JarvisViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("jarvis", Context.MODE_PRIVATE)
+    private val apiTokenStore = ApiTokenStore(application)
     private val deviceId = prefs.getString("device_id", null) ?: UUID.randomUUID().toString().also {
         prefs.edit().putString("device_id", it).apply()
     }
@@ -58,7 +59,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     fun setInput(value: String) { _state.value = _state.value.copy(input = value, error = null) }
     fun setEndpoint(value: String) { _state.value = _state.value.copy(endpoint = value.trimEnd('/'), error = null, connected = false) }
 
-    fun currentApiToken(): String = prefs.getString("api_token", "").orEmpty()
+    fun currentApiToken(): String = apiTokenStore.read()
 
     fun saveConnection(endpointValue: String, tokenValue: String): Boolean {
         val endpoint = endpointValue.trim().trimEnd('/')
@@ -71,7 +72,11 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             _state.value = _state.value.copy(error = "The private access token must be at least 32 characters.", connected = false)
             return false
         }
-        prefs.edit().putString("endpoint", endpoint).putString("api_token", token).apply()
+        prefs.edit().putString("endpoint", endpoint).apply()
+        try { apiTokenStore.write(token) } catch (_: Exception) {
+            _state.value = _state.value.copy(error = "Could not securely store the access token on this device.", connected = false)
+            return false
+        }
         _state.value = _state.value.copy(endpoint = endpoint, error = null, connected = false)
         refreshConnection()
         return true
@@ -131,18 +136,34 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         for(candidate in candidateEndpoints(endpoint)){
             try{
                 val connection=(URL(candidate+"/health").openConnection() as HttpURLConnection).apply{requestMethod="GET";connectTimeout=5000;readTimeout=5000}
-                val status=try{connection.responseCode}finally{connection.disconnect()}
-                if(status in 200..299){_state.value=_state.value.copy(endpoint=candidate,connected=true,connectionChecking=false);return}
+                val status = connection.responseCode
+                val payload = if (status in 200..299) connection.inputStream.bufferedReader().use { JSONObject(it.readText()) } else null
+                connection.disconnect()
+                if (status in 200..299 && payload?.optString("status") == "ok" &&
+                    payload.optString("brain") == "gemma-4-e4b-it-kaggle") {
+                    _state.value = _state.value.copy(endpoint=candidate, connected=true, connectionChecking=false, error=null)
+                    return
+                }
+                if (status in 200..299) {
+                    _state.value = _state.value.copy(connected=false, connectionChecking=false,
+                        error="Endpoint is reachable, but it is not serving the loaded JARVIS Gemma brain.")
+                    return
+                }
             }catch(_:Exception){}
         }
         _state.value=_state.value.copy(connected=false,connectionChecking=false)
     }
 
-    private fun postChat(endpoint:String,message:String):Result<String>{
-        val connection=(URL(endpoint+"/chat").openConnection() as HttpURLConnection).apply{
-            requestMethod="POST";connectTimeout=10000;readTimeout=60000;doOutput=true
-            setRequestProperty("Content-Type","application/json");setRequestProperty("Accept","application/json");setRequestProperty("X-JARVIS-Device",deviceId)
-            prefs.getString("api_token", "")?.takeIf { it.isNotBlank() }?.let { setRequestProperty("X-JARVIS-Token", it) }
+    private fun postChat(endpoint: String, message: String): Result<String> {
+        val token = currentApiToken()
+        if (token.length < 32) return Result.failure(IllegalStateException("Open Connection and save the private JARVIS access token first."))
+        if (!RuntimeEndpointResolver.isUsable(endpoint)) return Result.failure(IllegalStateException("The JARVIS endpoint must be a valid public HTTPS URL."))
+        val connection = (URL(endpoint + "/chat").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"; connectTimeout = 10000; readTimeout = 120000; doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("X-JARVIS-Device", deviceId)
+            setRequestProperty("X-JARVIS-Token", token)
         }
         return try{
             val body=JSONObject().put("message",message).toString()
