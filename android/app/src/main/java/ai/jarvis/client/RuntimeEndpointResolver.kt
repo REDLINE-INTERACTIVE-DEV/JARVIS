@@ -9,21 +9,26 @@ import java.util.Locale
 
 object RuntimeEndpointResolver {
     const val BOOTSTRAP_URL = "https://raw.githubusercontent.com/REDLINE-INTERACTIVE-DEV/JARVIS/main/runtime-endpoint.json"
+
     fun savedEndpoint(prefs: SharedPreferences): String? =
         prefs.getString("endpoint", null)?.trim()?.trimEnd('/')?.takeIf(::isUsable)
 
-    fun bootstrapEndpoint(): String? = try {
-        val connection = (URL(BOOTSTRAP_URL).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"; connectTimeout = 2500; readTimeout = 2500
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("Cache-Control", "no-cache")
-        }
-        try {
-            if (connection.responseCode !in 200..299) return null
-            JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-                .optString("endpoint").trim().trimEnd('/').takeIf(::isUsable)
-        } finally { connection.disconnect() }
-    } catch (_: Exception) { null }
+    fun bootstrapEndpoint(): String? {
+        return try {
+            val connection = (URL(BOOTSTRAP_URL).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 2500
+                readTimeout = 2500
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("Cache-Control", "no-cache")
+            }
+            try {
+                if (connection.responseCode !in 200..299) null
+                else JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                    .optString("endpoint").trim().trimEnd('/').takeIf(::isUsable)
+            } finally { connection.disconnect() }
+        } catch (_: Exception) { null }
+    }
 
     fun resolve(prefs: SharedPreferences, compiledDefault: String): String? = savedEndpoint(prefs)
 
