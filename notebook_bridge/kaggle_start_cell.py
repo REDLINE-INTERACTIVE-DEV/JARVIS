@@ -6,6 +6,7 @@ loaded. It does not download or substitute another model.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -93,6 +94,7 @@ if str(REPO_DIR) not in sys.path:
 # Force imports to come from the refreshed repository checkout.
 sys.modules.pop("notebook_bridge.serve_jarvis", None)
 sys.modules.pop("notebook_bridge", None)
+os.environ.setdefault("JARVIS_DB_PATH", "/kaggle/working/jarvis_memory.db")
 import uvicorn
 from notebook_bridge.serve_jarvis import create_kaggle_app
 
