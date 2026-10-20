@@ -1,0 +1,8 @@
+# Lightweight dependencies for backend unit tests and the Kaggle bridge CI.
+# The optional local GGUF inference runtime is installed with
+# backend/requirements-llama.txt and is not needed by these tests.
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+pydantic>=2,<3
+httpx>=0.27,<1
+pytest>=8,<9
