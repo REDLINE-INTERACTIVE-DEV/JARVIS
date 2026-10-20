@@ -79,6 +79,10 @@ def create_kaggle_app(model: Any, processor: Any, api_token: str):
     app = create_app(brain=brain)
     app.state.jarvis_brain = brain
 
+    @app.get("/auth/check")
+    async def auth_check():
+        return {"authenticated": True, "brain": brain.provider}
+
     @app.middleware("http")
     async def require_private_token(request, call_next):
         if request.url.path == "/health":

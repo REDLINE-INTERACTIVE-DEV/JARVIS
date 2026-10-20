@@ -182,7 +182,7 @@ class WakeWordService : Service() {
                     setRequestProperty("Content-Type", "application/json")
                     setRequestProperty("Accept", "application/json")
                     setRequestProperty("X-JARVIS-Device", deviceId)
-                    prefs.getString("api_token", "")?.takeIf { it.isNotBlank() }?.let {
+                    SecureTokenStore.readToken(this@WakeWordService).takeIf { it.isNotBlank() }?.let {
                         setRequestProperty("X-JARVIS-Token", it)
                     }
                 }

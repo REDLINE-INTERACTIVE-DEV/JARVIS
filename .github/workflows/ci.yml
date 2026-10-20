@@ -13,7 +13,9 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: python -m pip install -r backend/requirements.txt
+      # CI exercises API/backend behavior; the optional local GGUF runtime is
+      # installed separately from backend/requirements-llama.txt.
+      - run: python -m pip install -r backend/requirements-ci.txt
       - run: PYTHONPATH=. python -m pytest -q backend/tests
 
   android:
@@ -36,12 +38,12 @@ jobs:
       - name: Build Android debug APK and unit tests
         run: gradle --no-daemon -p android :app:testDebugUnitTest :app:assembleDebug
       - name: Rename Android APK
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk "JARVIS-v0.12.0.apk"
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk "JARVIS-v0.13.0.apk"
       - name: Upload Android APK
         uses: actions/upload-artifact@v7
         with:
-          name: JARVIS-Android-v0.12.0
-          path: JARVIS-v0.12.0.apk
+          name: JARVIS-Android-v0.13.0
+          path: JARVIS-v0.13.0.apk
 
   desktop-linux:
     runs-on: ubuntu-latest

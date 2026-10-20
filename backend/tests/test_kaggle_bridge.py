@@ -16,6 +16,16 @@ def test_kaggle_bridge_requires_token_and_serves_existing_chat_api(tmp_path, mon
 
     denied = client.post("/chat", json={"message": "hello"})
     assert denied.status_code == 401
+    assert client.get("/auth/check").status_code == 401
+    assert client.get("/memory").status_code == 401
+    assert client.post("/tasks", json={"message": "do something"}).status_code == 401
+
+    accepted_check = client.get("/auth/check", headers={"X-JARVIS-Token": token})
+    assert accepted_check.status_code == 200
+    assert accepted_check.json() == {
+        "authenticated": True,
+        "brain": "gemma-4-e4b-it-kaggle",
+    }
 
     accepted = client.post(
         "/chat",
