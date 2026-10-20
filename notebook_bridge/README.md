@@ -12,7 +12,7 @@ This bridge connects the already-loaded Gemma 4 E4B model in the Kaggle notebook
 
 ## Notebook setup
 
-Run these cells only after the model and its processor have loaded successfully in `JARVIS_Pretrained_Brain`.
+Run these cells only after the model and its processor have loaded successfully in your Kaggle notebook **Pre trained model** (`yashasvishahi/pre-trained-model`). The saved run confirms that Gemma loaded on the two Tesla T4 GPUs and completed text-generation checks.
 
 ### 1. Install only API-server dependencies
 
@@ -24,7 +24,7 @@ Do not install the full `backend/requirements.txt` into this Python 3.13 noteboo
 
 ### 2. Get the current bridge code
 
-While PR #6 is under review, use `fix/gemma-connection-security-20261019`. Once the bridge and security changes have been merged to `main`, change `BRANCH` to `main`.
+Use `feat/kaggle-gemma-bridge` while PR #3 is under review; this branch now includes the merged security and CI fixes. Once PR #3 is merged to `main`, change `BRANCH` to `main`.
 
 The code below refreshes an existing clean checkout instead of silently keeping an old branch. It stops rather than overwriting local edits.
 
@@ -33,7 +33,7 @@ import os, subprocess, sys
 
 REPO_URL = "https://github.com/REDLINE-INTERACTIVE-DEV/JARVIS.git"
 REPO_DIR = "/kaggle/working/JARVIS-bridge"
-BRANCH = "fix/gemma-connection-security-20261019"
+BRANCH = "feat/kaggle-gemma-bridge"
 
 if not os.path.isdir(os.path.join(REPO_DIR, ".git")):
     subprocess.run(
