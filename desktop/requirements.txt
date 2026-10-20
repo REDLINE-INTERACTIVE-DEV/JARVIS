@@ -1,1 +1,2 @@
 pyinstaller>=6,<7
+keyring>=25,<26

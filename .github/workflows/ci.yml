@@ -16,7 +16,7 @@ jobs:
       # CI exercises API/backend behavior; the optional local GGUF runtime is
       # installed separately from backend/requirements-llama.txt.
       - run: python -m pip install -r backend/requirements-ci.txt
-      - run: PYTHONPATH=. python -m pytest -q backend/tests
+      - run: PYTHONPATH=. python -m pytest -q backend/tests desktop/tests
       - run: python -m compileall -q notebook_bridge
 
   android:
@@ -62,7 +62,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -r desktop/requirements.txt
-      - run: pyinstaller --onefile --name jarvis-desktop desktop/main.py
+      - run: pyinstaller --onefile --collect-all keyring --name jarvis-desktop desktop/main.py
       - uses: actions/upload-artifact@v7
         with:
           name: jarvis-desktop-linux
@@ -76,7 +76,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -r desktop/requirements.txt
-      - run: pyinstaller --onefile --windowed --name JARVIS desktop/main.py
+      - run: pyinstaller --onefile --windowed --collect-all keyring --name JARVIS desktop/main.py
       - uses: actions/upload-artifact@v7
         with:
           name: jarvis-desktop-windows
