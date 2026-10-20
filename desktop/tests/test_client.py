@@ -1,6 +1,6 @@
 import json
 
-from desktop.main import EXPECTED_BRAIN, JarvisClient, is_public_https_endpoint
+from desktop.main import (CONFIG_PATH, EXPECTED_BRAIN, JarvisClient, is_public_https_endpoint, load_saved_token, save_endpoint_config, save_token_secure)
 
 
 class FakeResponse:
@@ -86,3 +86,27 @@ def test_chat_refuses_to_send_without_token():
         assert "token" in str(exc).lower()
     else:
         raise AssertionError("chat should reject a missing token")
+
+
+
+def test_token_uses_keyring_and_is_not_written_to_endpoint_config(tmp_path, monkeypatch):
+    token = "k" * 43
+    stored = {}
+    fake_keyring = type(
+        "FakeKeyring",
+        (),
+        {
+            "set_password": staticmethod(lambda service, username, value: stored.update({(service, username): value})),
+            "get_password": staticmethod(lambda service, username: stored.get((service, username))),
+        },
+    )
+    monkeypatch.setitem(__import__("sys").modules, "keyring", fake_keyring)
+    monkeypatch.delenv("JARVIS_API_TOKEN", raising=False)
+    monkeypatch.setattr("desktop.main.CONFIG_PATH", tmp_path / "desktop.json")
+
+    assert save_token_secure(token) is True
+    assert load_saved_token() == token
+    save_endpoint_config("https://example.trycloudflare.com")
+    config = json.loads((tmp_path / "desktop.json").read_text(encoding="utf-8"))
+    assert config == {"endpoint": "https://example.trycloudflare.com"}
+    assert token not in (tmp_path / "desktop.json").read_text(encoding="utf-8")
