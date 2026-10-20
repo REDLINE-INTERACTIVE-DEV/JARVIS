@@ -257,7 +257,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     @Composable
-    private fun JarvisHud(
+    private fun LegacyJarvisHud(
         listening: Boolean,
         speaking: Boolean,
         initiating: Boolean,
