@@ -1,43 +1,67 @@
 # JARVIS Kaggle Gemma brain bridge
 
-This bridge makes the **already-loaded Gemma 4 E4B model the active JARVIS brain** for the existing API and Android app. It does not contain model weights or credentials.
+This bridge connects the already-loaded Gemma 4 E4B model in the Kaggle notebook to the existing JARVIS API and Android app. It contains no model weights or credentials.
 
-## Hosting limits (not feature limits)
+## Hosting and security limits
 
-- Kaggle sessions are temporary. The app only reaches JARVIS while the notebook, model, API server, and tunnel are running.
-- The public tunnel URL changes when recreated. The access token must stay private.
+- Kaggle sessions are temporary. JARVIS is reachable only while the notebook, model, API server, and tunnel are running.
+- The temporary HTTPS tunnel URL changes when recreated. Keep the access token private.
 - Never commit the tunnel URL plus token, the token itself, notebook output containing the token, or model weights.
-- Kaggle's session lifetime is a hosting limitation; it does not intentionally reduce JARVIS's app feature set. Keep the notebook session alive while using this endpoint. Security hardening requires HTTPS, encrypted Android token storage, and authenticated connection checks.
+- The endpoint is for a personal demonstration, not permanent hosting. A Kaggle session ending is a hosting limitation.
+- Android stores the access token encrypted with an AES key held by Android Keystore. The app validates the protected `/auth/check` endpoint before reporting the brain as connected.
 
-## Notebook steps
+## Notebook setup
 
-Run these cells **after the model has loaded successfully** in `JARVIS_Pretrained_Brain`.
+Run these cells only after the model and its processor have loaded successfully in `JARVIS_Pretrained_Brain`.
 
-### 1. Install only the API-server dependencies
+### 1. Install only API-server dependencies
 
 ```python
 %pip install -q fastapi uvicorn httpx
 ```
 
-Do not install the repository's full `backend/requirements.txt` in this Python 3.13 notebook: it includes `llama-cpp-python`, which failed to install in this environment.
+Do not install the full `backend/requirements.txt` into this Python 3.13 notebook: it includes `llama-cpp-python`, which is not required for this already-loaded Transformers model.
 
-### 2. Get the bridge code from this repository branch
+### 2. Get the current bridge code
 
-Use the feature branch while the pull request is under review. After it is merged, change `--branch feat/kaggle-gemma-bridge` to `--branch main`.
+While PR #6 is under review, use `fix/gemma-connection-security-20261019`. Once the bridge and security changes have been merged to `main`, change `BRANCH` to `main`.
+
+The code below refreshes an existing clean checkout instead of silently keeping an old branch. It stops rather than overwriting local edits.
 
 ```python
-import os, sys, subprocess
+import os, subprocess, sys
 
-repo_dir = "/kaggle/working/JARVIS"
-if not os.path.isdir(repo_dir):
-    subprocess.run([
-        "git", "clone", "--depth", "1",
-        "--branch", "feat/kaggle-gemma-bridge",
-        "https://github.com/REDLINE-INTERACTIVE-DEV/JARVIS.git",
-        repo_dir,
-    ], check=True)
-if repo_dir not in sys.path:
-    sys.path.insert(0, repo_dir)
+REPO_URL = "https://github.com/REDLINE-INTERACTIVE-DEV/JARVIS.git"
+REPO_DIR = "/kaggle/working/JARVIS-bridge"
+BRANCH = "fix/gemma-connection-security-20261019"
+
+if not os.path.isdir(os.path.join(REPO_DIR, ".git")):
+    subprocess.run(
+        ["git", "clone", "--depth", "1", "--branch", BRANCH, REPO_URL, REPO_DIR],
+        check=True,
+    )
+else:
+    dirty = subprocess.run(
+        ["git", "-C", REPO_DIR, "status", "--porcelain"],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    if dirty:
+        raise RuntimeError(
+            f"{REPO_DIR} has local edits; preserve or remove that folder before refreshing."
+        )
+    subprocess.run(["git", "-C", REPO_DIR, "fetch", "--depth", "1", "origin", BRANCH], check=True)
+    subprocess.run(
+        ["git", "-C", REPO_DIR, "checkout", "-B", BRANCH, f"origin/{BRANCH}"],
+        check=True,
+    )
+
+if REPO_DIR not in sys.path:
+    sys.path.insert(0, REPO_DIR)
+
+print("JARVIS bridge revision:", subprocess.run(
+    ["git", "-C", REPO_DIR, "rev-parse", "--short", "HEAD"],
+    check=True, capture_output=True, text=True,
+).stdout.strip())
 ```
 
 ### 3. Start the JARVIS API using the model already in memory
@@ -45,6 +69,8 @@ if repo_dir not in sys.path:
 ```python
 import secrets
 import threading
+import time
+import urllib.request
 import uvicorn
 from notebook_bridge.serve_jarvis import create_kaggle_app
 
@@ -57,8 +83,19 @@ server = uvicorn.Server(
 server_thread = threading.Thread(target=server.run, daemon=True)
 server_thread.start()
 
-print("JARVIS API starting. Keep this notebook session alive.")
-print("PRIVATE ACCESS TOKEN (copy only into your JARVIS app; do not share):")
+# Verify the local API is ready before starting the public tunnel.
+for attempt in range(30):
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2) as response:
+            if response.status == 200:
+                break
+    except Exception:
+        time.sleep(1)
+else:
+    raise RuntimeError("JARVIS API did not become healthy; inspect the notebook logs.")
+
+print("JARVIS API is healthy. Keep this notebook session alive.")
+print("PRIVATE ACCESS TOKEN (paste only into the JARVIS app; do not share):")
 print(JARVIS_API_TOKEN)
 ```
 
@@ -93,25 +130,26 @@ for _ in range(40):
 
 if not tunnel_url:
     raise RuntimeError("Tunnel URL not found. Inspect /kaggle/working/cloudflared.log.")
+
 print("Temporary JARVIS HTTPS URL:", tunnel_url)
 print("Health check:", tunnel_url + "/health")
 ```
 
-Open the printed `/health` URL in a browser. It should return JSON with `"status":"ok"` and `"brain":"gemma-4-e4b-it-kaggle"`. The `/health` route is intentionally public; every other API route requires the private token.
+Open the `/health` URL. It should return JSON containing `"status":"ok"` and `"brain":"gemma-4-e4b-it-kaggle"`. Health is public by design; every other route requires the private `X-JARVIS-Token` header.
 
 ### 5. Connect the Android app
 
-Install the Android APK built from this feature branch's GitHub Actions workflow. In the app, tap **Connection** and enter:
+Install the Android APK from the successful GitHub Actions run for this branch. In JARVIS, open **Connection** and enter:
 
-- **HTTPS backend URL:** the temporary `https://....trycloudflare.com` URL (no `/chat` suffix).
+- **HTTPS backend URL:** the temporary `https://....trycloudflare.com` URL, without a `/chat` suffix.
 - **Private access token:** the token printed in step 3.
 
-Tap **Save**. The app checks the protected `/auth/check` route to verify both the token and the active Gemma brain, then sends chat and voice requests with the private `X-JARVIS-Token` header. Android stores the token encrypted with an AES key held by Android Keystore.
+Tap **Save**. The app verifies the protected `/auth/check` route, then sends typed and voice requests with the private token. Test with a simple message such as `Reply exactly: JARVIS connection verified.`
 
-## What you must do
+## Keep it working
 
-1. Keep the Kaggle notebook session running.
-2. Keep the API server and Cloudflare tunnel processes alive.
-3. Enter the current tunnel URL and token in the Android app each time a new tunnel/token is created.
-4. Stop sharing the notebook output: it contains a private token. Clear notebook outputs before sharing the notebook. Regenerate the token and reconnect if it is exposed.
-5. If the Kaggle session ends, restart the model/API/tunnel; this is not 24/7 hosting.
+1. Keep the Kaggle notebook session, API server, and tunnel alive.
+2. Enter the current URL and token in the app whenever a new tunnel/token is created.
+3. Clear notebook outputs before sharing the notebook. If the token is exposed, restart the bridge with a newly generated token and reconnect.
+4. If the Kaggle session ends, restart the model/API/tunnel. This temporary endpoint is not 24/7 hosting.
+5. Do not commit a real endpoint or token to `runtime-endpoint.json`; keep that public bootstrap file empty and use the app's secure Connection settings.
