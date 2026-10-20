@@ -31,6 +31,12 @@ jobs:
         uses: android-actions/setup-android@v4
         with:
           packages: "platform-tools platforms;android-35 build-tools;35.0.0"
+      - name: Verify HTTPS-only Android network policy
+        run: |
+          grep -Fq 'android:usesCleartextTraffic="false"' android/app/src/main/AndroidManifest.xml
+          grep -Fq 'cleartextTrafficPermitted="false"' android/app/src/main/res/xml/network_security_config.xml
+          ! grep -Fq 'android:usesCleartextTraffic="true"' android/app/src/main/AndroidManifest.xml
+          ! grep -Fq 'cleartextTrafficPermitted="true"' android/app/src/main/res/xml/network_security_config.xml
       - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v6
         with:
