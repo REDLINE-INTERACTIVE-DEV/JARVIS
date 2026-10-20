@@ -10,6 +10,19 @@ This bridge connects the already-loaded Gemma 4 E4B model in the Kaggle notebook
 - The endpoint is for a personal demonstration, not permanent hosting. A Kaggle session ending is a hosting limitation.
 - Android stores the access token encrypted with an AES key held by Android Keystore. The app validates the protected `/auth/check` endpoint before reporting the brain as connected.
 
+## Fast path: one-cell launcher
+
+After the model finishes loading in **Pre trained model** (yashasvishahi/pre-trained-model), run this single cell. It downloads the current bridge launcher from this repository and executes it in the notebook's existing kernel, using the already-loaded model and processor variables.
+
+    import urllib.request
+
+    launcher_url = "https://raw.githubusercontent.com/REDLINE-INTERACTIVE-DEV/JARVIS/feat/kaggle-gemma-bridge/notebook_bridge/kaggle_start_cell.py"
+    with urllib.request.urlopen(launcher_url, timeout=30) as response:
+        launcher_source = response.read().decode("utf-8")
+    exec(compile(launcher_source, "kaggle_start_cell.py", "exec"), globals())
+
+The launcher installs only FastAPI/Uvicorn/HTTPX, refreshes the bridge checkout, starts the local API and temporary HTTPS tunnel, and verifies both public health and the protected Gemma identity before printing the URL/token. It does not download or substitute another AI model and does not write the URL or token to GitHub. Review the launcher source in this repository if you want to inspect it before running.
+
 ## Notebook setup
 
 Run these cells only after the model and its processor have loaded successfully in your Kaggle notebook **Pre trained model** (`yashasvishahi/pre-trained-model`). The saved run confirms that Gemma loaded on the two Tesla T4 GPUs and completed text-generation checks.
