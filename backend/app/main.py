@@ -37,12 +37,12 @@ def create_app(memory=None, brain=None, tools=None, research=None):
     async def answer(message):
         if isinstance(brain, BrainRuntime):
             return await brain.respond(message, context_for(message))
-        return brain.respond(message, context_for(message))
+        return await asyncio.to_thread(brain.respond, message, context_for(message))
 
     async def research_answer(message, results):
         if isinstance(brain, BrainRuntime):
             return await brain.answer_with_research(message, context_for(message), results)
-        return brain.answer_with_research(message, context_for(message), results)
+        return await asyncio.to_thread(brain.answer_with_research, message, context_for(message), results)
 
     class ChatRequest(BaseModel):
         message: str = Field(min_length=1, max_length=10000)
@@ -170,7 +170,7 @@ def create_app(memory=None, brain=None, tools=None, research=None):
         source = device_id(x_jarvis_device)
         memory.add(f"user:{source}", req.message)
         if not isinstance(brain, BrainRuntime):
-            out = brain.respond(req.message, context_for(req.message))
+            out = await asyncio.to_thread(brain.respond, req.message, context_for(req.message))
             memory.add(f"assistant:{source}", out)
             return {"results": [{"goal_id": "1", "goal": req.message, "status": "completed", "result": out}]}
         results = await brain.multitask(req.message, context_for(req.message))

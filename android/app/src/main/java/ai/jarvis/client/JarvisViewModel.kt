@@ -57,6 +57,29 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setInput(value: String) { _state.value = _state.value.copy(input = value, error = null) }
     fun setEndpoint(value: String) { _state.value = _state.value.copy(endpoint = value.trimEnd('/'), error = null, connected = false) }
+
+    fun currentApiToken(): String = SecureTokenStore.readToken(getApplication())
+
+    fun saveConnection(endpointValue: String, tokenValue: String): Boolean {
+        val endpoint = endpointValue.trim().trimEnd('/')
+        val token = tokenValue.trim()
+        if (!RuntimeEndpointResolver.isUsable(endpoint)) {
+            _state.value = _state.value.copy(error = "Enter a valid public HTTPS backend URL.", connected = false)
+            return false
+        }
+        if (token.length < 32) {
+            _state.value = _state.value.copy(error = "The private access token must be at least 32 characters.", connected = false)
+            return false
+        }
+        if (!SecureTokenStore.saveToken(getApplication(), token)) {
+            _state.value = _state.value.copy(error = "Android secure storage is unavailable. The token was not saved.", connected = false)
+            return false
+        }
+        prefs.edit().putString("endpoint", endpoint).apply()
+        _state.value = _state.value.copy(endpoint = endpoint, error = null, connected = false)
+        refreshConnection()
+        return true
+    }
     fun setListening(active: Boolean) { _state.value = _state.value.copy(listening = active) }
     fun setInitiating() { _state.value = _state.value.copy(listening = false, busy = true, error = null) }
     fun setError(value: String?) { _state.value = _state.value.copy(error = value) }
@@ -92,50 +115,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun candidateEndpoints(endpoint:String):List<String>{
         val normalized=endpoint.trim().trimEnd('/')
-        val loopback=normalized.equals("/127.0.0.1:8000",true)||normalized.equals("127.0.0.1:8000",true)||normalized.equals("http://127.0.0.1:8000",true)||normalized.equals("http://localhost:8000",true)
-        val candidates=linkedSetOf<String>()
-        if(!loopback&&RuntimeEndpointResolver.isUsable(normalized)) candidates+=normalized
-        RuntimeEndpointResolver.bootstrapEndpoint()?.let{candidates+=it}
-        discoverLanEndpoint()?.let{candidates+=it}
-        if(RuntimeEndpointResolver.isUsable(BuildConfig.DEFAULT_API_BASE_URL)) candidates+=BuildConfig.DEFAULT_API_BASE_URL
-        return candidates.toList()
-    }
-
-    private fun discoverLanEndpoint():String?{
-        val hosts=linkedSetOf<String>()
-        try{
-            val interfaces=NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
-            for(networkInterface in interfaces){
-                if(!networkInterface.isUp||networkInterface.isLoopback) continue
-                for(address in networkInterface.interfaceAddresses){
-                    val ipv4=address.address as? Inet4Address ?: continue
-                    if(!ipv4.isSiteLocalAddress) continue
-                    val prefix=address.networkPrefixLength.toInt()
-                    if(prefix !in 1..32) continue
-                    val scanPrefix=maxOf(prefix,24)
-                    val bytes=ipv4.address
-                    val ip=((bytes[0].toInt() and 0xff) shl 24) or ((bytes[1].toInt() and 0xff) shl 16) or ((bytes[2].toInt() and 0xff) shl 8) or (bytes[3].toInt() and 0xff)
-                    val mask=if(scanPrefix==32)-1 else(-1 shl (32-scanPrefix))
-                    val network=ip and mask
-                    val hostCount=1 shl (32-scanPrefix)
-                    for(offset in 1 until hostCount-1){
-                        val candidate=network+offset
-                        hosts += (candidate shr 24 and 0xff).toString()+"."+(candidate shr 16 and 0xff).toString()+"."+(candidate shr 8 and 0xff).toString()+"."+(candidate and 0xff).toString()
-                        if(hosts.size>=254) break
-                    }
-                }
-            }
-        }catch(_:Exception){return null}
-        if(hosts.isEmpty()) return null
-        val executor=Executors.newFixedThreadPool(32)
-        val completion=ExecutorCompletionService<String?>(executor)
-        val futures=hosts.map{host->completion.submit(Callable{
-            try{
-                val connection=(URL("http://"+host+":8000/health").openConnection() as HttpURLConnection).apply{requestMethod="GET";connectTimeout=300;readTimeout=500}
-                try{if(connection.responseCode in 200..299)"http://"+host+":8000" else null}finally{connection.disconnect()}
-            }catch(_:Exception){null}
-        })}
-        return try{repeat(futures.size){val found=completion.take().get();if(found!=null)return found};null}catch(_:Exception){null}finally{executor.shutdownNow()}
+        return if (RuntimeEndpointResolver.isUsable(normalized)) listOf(normalized) else emptyList()
     }
 
     private fun postWithRetry(endpoint:String,message:String):Result<Pair<String,String>>{
@@ -151,12 +131,37 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun checkConnection(){
         val endpoint=_state.value.endpoint.trim().trimEnd('/')
+        val token = SecureTokenStore.readToken(getApplication())
         _state.value=_state.value.copy(connectionChecking=true)
+        if (token.isBlank()) {
+            _state.value = _state.value.copy(connected=false, connectionChecking=false)
+            return
+        }
         for(candidate in candidateEndpoints(endpoint)){
             try{
-                val connection=(URL(candidate+"/health").openConnection() as HttpURLConnection).apply{requestMethod="GET";connectTimeout=5000;readTimeout=5000}
-                val status=try{connection.responseCode}finally{connection.disconnect()}
-                if(status in 200..299){_state.value=_state.value.copy(endpoint=candidate,connected=true,connectionChecking=false);return}
+                val connection=(URL(candidate+"/auth/check").openConnection() as HttpURLConnection).apply{
+                    requestMethod="GET";connectTimeout=5000;readTimeout=5000
+                    setRequestProperty("Accept","application/json")
+                    setRequestProperty("X-JARVIS-Token", token)
+                }
+                val status: Int
+                val body: String
+                try {
+                    status = connection.responseCode
+                    val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                    body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                } finally { connection.disconnect() }
+                val json = if (status in 200..299) JSONObject(body) else JSONObject()
+                val authenticated = json.optBoolean("authenticated", false)
+                val correctBrain = json.optString("brain") == "gemma-4-e4b-it-kaggle"
+                if(status in 200..299 && authenticated && correctBrain){
+                    _state.value=_state.value.copy(endpoint=candidate,connected=true,connectionChecking=false,error=null)
+                    return
+                }
+                if (status == 401) {
+                    _state.value = _state.value.copy(error="JARVIS rejected the access token. Recheck Connection settings.", connected=false, connectionChecking=false)
+                    return
+                }
             }catch(_:Exception){}
         }
         _state.value=_state.value.copy(connected=false,connectionChecking=false)
@@ -166,6 +171,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         val connection=(URL(endpoint+"/chat").openConnection() as HttpURLConnection).apply{
             requestMethod="POST";connectTimeout=10000;readTimeout=60000;doOutput=true
             setRequestProperty("Content-Type","application/json");setRequestProperty("Accept","application/json");setRequestProperty("X-JARVIS-Device",deviceId)
+            SecureTokenStore.readToken(getApplication()).takeIf { it.isNotBlank() }?.let { setRequestProperty("X-JARVIS-Token", it) }
         }
         return try{
             val body=JSONObject().put("message",message).toString()

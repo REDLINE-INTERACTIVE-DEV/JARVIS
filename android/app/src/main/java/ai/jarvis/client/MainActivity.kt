@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
@@ -124,6 +125,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private fun JarvisApp(vm: JarvisViewModel) {
         val state by vm.state.collectAsState()
         val context = LocalContext.current
+        var showConnectionDialog by remember { mutableStateOf(false) }
+        var endpointDraft by remember(state.endpoint) { mutableStateOf(state.endpoint) }
+        var tokenDraft by remember { mutableStateOf(vm.currentApiToken()) }
 
         LaunchedEffect(state.speakToken) {
             if (state.speakToken > 0) state.lastAssistantText?.let { speak(it) }
@@ -150,6 +154,24 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            if (state.connected) "BACKEND ONLINE" else "BACKEND OFFLINE",
+                            color = if (state.connected) JarvisBlue else Color(0xFFFFB4A8),
+                            fontSize = 10.sp,
+                            letterSpacing = 1.2.sp,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = {
+                            endpointDraft = state.endpoint
+                            tokenDraft = vm.currentApiToken()
+                            showConnectionDialog = true
+                        }) { Text("Connection") }
+                    }
+
                     Spacer(Modifier.height(8.dp))
 
                     JarvisHud(
@@ -251,6 +273,46 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                             fontSize = 12.sp,
                         )
                     }
+                }
+                if (showConnectionDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showConnectionDialog = false },
+                        title = { Text("Connect to JARVIS") },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                    value = endpointDraft,
+                                    onValueChange = { endpointDraft = it },
+                                    label = { Text("HTTPS backend URL") },
+                                    placeholder = { Text("https://your-tunnel.trycloudflare.com") },
+                                    singleLine = true,
+                                )
+                                OutlinedTextField(
+                                    value = tokenDraft,
+                                    onValueChange = { tokenDraft = it },
+                                    label = { Text("Private access token") },
+                                    visualTransformation = PasswordVisualTransformation(),
+                                    singleLine = true,
+                                )
+                                Text(
+                                    "Kaggle links are temporary. Keep the token private and never commit it.",
+                                    color = Color(0xFF8BAAB0),
+                                    fontSize = 12.sp,
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                if (vm.saveConnection(endpointDraft, tokenDraft)) {
+                                    showConnectionDialog = false
+                                }
+                            }) { Text("Save") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showConnectionDialog = false }) { Text("Cancel") }
+                        },
+                        containerColor = Color(0xFF04151A),
+                    )
                 }
             }
         }
