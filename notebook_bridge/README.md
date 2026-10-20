@@ -21,7 +21,7 @@ After the model finishes loading in **Pre trained model** (yashasvishahi/pre-tra
         launcher_source = response.read().decode("utf-8")
     exec(compile(launcher_source, "kaggle_start_cell.py", "exec"), globals())
 
-The launcher installs only FastAPI/Uvicorn/HTTPX, refreshes the bridge checkout, starts the local API and temporary HTTPS tunnel, and verifies both public health and the protected Gemma identity before printing the URL/token. It does not download or substitute another AI model and does not write the URL or token to GitHub. Review the launcher source in this repository if you want to inspect it before running.
+The launcher installs only FastAPI/Uvicorn/HTTPX, refreshes the bridge checkout, runs a real model-generation smoke test, starts the local API and temporary HTTPS tunnel, and verifies both public health and the protected Gemma identity before printing the URL/token. It does not download or substitute another AI model and does not write the URL or token to GitHub. Review the launcher source in this repository if you want to inspect it before running.
 
 ## Notebook setup
 

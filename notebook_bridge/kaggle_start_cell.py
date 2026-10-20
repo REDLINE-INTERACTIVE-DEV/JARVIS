@@ -101,6 +101,15 @@ app = create_kaggle_app(model, processor, JARVIS_API_TOKEN)
 if getattr(app.state.jarvis_brain, "provider", "") != EXPECTED_BRAIN:
     raise RuntimeError("The bridge did not bind the expected Kaggle Gemma brain.")
 
+print("Running JARVIS model-generation smoke test...")
+smoke_answer = app.state.jarvis_brain.respond(
+    "Reply exactly: JARVIS inference check passed.",
+    [],
+)
+if not isinstance(smoke_answer, str) or not smoke_answer.strip():
+    raise RuntimeError("The loaded JARVIS brain returned an empty response.")
+print("Model-generation smoke test: PASS")
+
 jarvis_server = uvicorn.Server(
     uvicorn.Config(app, host=API_HOST, port=API_PORT, log_level="warning", access_log=False)
 )
