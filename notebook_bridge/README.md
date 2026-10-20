@@ -16,7 +16,7 @@ After the model finishes loading in **Pre trained model** (yashasvishahi/pre-tra
 
     import urllib.request
 
-    launcher_url = "https://raw.githubusercontent.com/REDLINE-INTERACTIVE-DEV/JARVIS/feat/kaggle-gemma-bridge/notebook_bridge/kaggle_start_cell.py"
+    launcher_url = "https://raw.githubusercontent.com/REDLINE-INTERACTIVE-DEV/JARVIS/main/notebook_bridge/kaggle_start_cell.py"
     with urllib.request.urlopen(launcher_url, timeout=30) as response:
         launcher_source = response.read().decode("utf-8")
     exec(compile(launcher_source, "kaggle_start_cell.py", "exec"), globals())
@@ -37,7 +37,7 @@ Do not install the full `backend/requirements.txt` into this Python 3.13 noteboo
 
 ### 2. Get the current bridge code
 
-Use `feat/kaggle-gemma-bridge` while PR #3 is under review; this branch now includes the merged security and CI fixes. Once PR #3 is merged to `main`, change `BRANCH` to `main`.
+Use `main`; it now contains the bridge, security, and CI fixes.
 
 The code below refreshes an existing clean checkout instead of silently keeping an old branch. It stops rather than overwriting local edits.
 
@@ -46,7 +46,7 @@ import os, subprocess, sys
 
 REPO_URL = "https://github.com/REDLINE-INTERACTIVE-DEV/JARVIS.git"
 REPO_DIR = "/kaggle/working/JARVIS-bridge"
-BRANCH = "feat/kaggle-gemma-bridge"
+BRANCH = "main"
 
 if not os.path.isdir(os.path.join(REPO_DIR, ".git")):
     subprocess.run(

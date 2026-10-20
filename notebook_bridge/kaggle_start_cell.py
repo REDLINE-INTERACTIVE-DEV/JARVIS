@@ -17,7 +17,7 @@ from pathlib import Path
 EXPECTED_BRAIN = "gemma-4-e4b-it-kaggle"
 REPO_URL = "https://github.com/REDLINE-INTERACTIVE-DEV/JARVIS.git"
 REPO_DIR = Path("/kaggle/working/JARVIS-bridge")
-BRANCH = "feat/kaggle-gemma-bridge"
+BRANCH = "main"
 API_HOST = "127.0.0.1"
 API_PORT = 8000
 API_BASE = f"http://{API_HOST}:{API_PORT}"
