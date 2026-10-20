@@ -106,8 +106,12 @@ smoke_answer = app.state.jarvis_brain.respond(
     "Reply exactly: JARVIS inference check passed.",
     [],
 )
-if not isinstance(smoke_answer, str) or not smoke_answer.strip():
-    raise RuntimeError("The loaded JARVIS brain returned an empty response.")
+if (
+    not isinstance(smoke_answer, str)
+    or not smoke_answer.strip()
+    or "wasn't able to form a useful response" in smoke_answer.lower()
+):
+    raise RuntimeError("The loaded JARVIS brain did not pass the generation smoke test.")
 print("Model-generation smoke test: PASS")
 
 jarvis_server = uvicorn.Server(
@@ -137,6 +141,7 @@ if not CLOUDFLARED_PATH.is_file():
     )
     CLOUDFLARED_PATH.chmod(0o755)
 
+CLOUDFLARED_PATH.chmod(0o755)
 jarvis_tunnel_log = open(TUNNEL_LOG_PATH, "w", encoding="utf-8")
 jarvis_cloudflared = subprocess.Popen(
     [str(CLOUDFLARED_PATH), "tunnel", "--no-autoupdate", "--url", API_BASE],
