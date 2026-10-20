@@ -21,9 +21,9 @@ After the model finishes loading in **Pre trained model** (yashasvishahi/pre-tra
         launcher_source = response.read().decode("utf-8")
     exec(compile(launcher_source, "kaggle_start_cell.py", "exec"), globals())
 
-The launcher installs only FastAPI/Uvicorn/HTTPX, refreshes the bridge checkout, runs a real model-generation smoke test, starts the local API and temporary HTTPS tunnel, and verifies both public health and the protected Gemma identity before printing the URL/token. It does not download or substitute another AI model and does not write the URL or token to GitHub. Review the launcher source in this repository if you want to inspect it before running.
+The launcher installs only FastAPI/Uvicorn/HTTPX, refreshes the bridge checkout, runs a real model-generation smoke test, starts the local API and temporary HTTPS tunnel, and verifies both public health and the protected Gemma identity before printing the URL/token. It does not download or substitute another AI model and does not write the URL or token to GitHub. Review the launcher source in this repository if you want to inspect it before running. Choose either this one-cell path or the manual path below, not both in the same kernel; both start the same local API port.
 
-## Notebook setup
+## Alternative: manual notebook setup
 
 Run these cells only after the model and its processor have loaded successfully in your Kaggle notebook **Pre trained model** (`yashasvishahi/pre-trained-model`). The saved run confirms that Gemma loaded on the two Tesla T4 GPUs and completed text-generation checks.
 
