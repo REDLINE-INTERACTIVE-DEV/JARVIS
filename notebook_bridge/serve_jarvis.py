@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hmac
+import threading
 from typing import Any
 
 from fastapi.responses import JSONResponse
@@ -18,6 +19,7 @@ class KaggleGemmaBrain:
     def __init__(self, model: Any, processor: Any) -> None:
         self.model = model
         self.processor = processor
+        self._generation_lock = threading.Lock()
 
     def _messages(self, message: str, memories: list[dict[str, Any]], research: str | None = None):
         messages: list[dict[str, str]] = [{"role": "system", "content": LocalBrain.IDENTITY}]
@@ -41,18 +43,20 @@ class KaggleGemmaBrain:
     def _generate(self, messages: list[dict[str, str]]) -> str:
         import torch
 
-        inputs = self.processor.apply_chat_template(
-            messages,
-            tokenize=True,
-            add_generation_prompt=True,
-            return_dict=True,
-            return_tensors="pt",
-        ).to(self.model.device)
-        input_length = inputs["input_ids"].shape[-1]
-        with torch.inference_mode():
-            outputs = self.model.generate(**inputs, max_new_tokens=220, do_sample=False)
-        answer = self.processor.decode(outputs[0][input_length:], skip_special_tokens=True).strip()
-        return answer or "I wasn't able to form a useful response. Please try rephrasing that."
+        # Serialize GPU inference while keeping the FastAPI event loop responsive.
+        with self._generation_lock:
+            inputs = self.processor.apply_chat_template(
+                messages,
+                tokenize=True,
+                add_generation_prompt=True,
+                return_dict=True,
+                return_tensors="pt",
+            ).to(self.model.device)
+            input_length = inputs["input_ids"].shape[-1]
+            with torch.inference_mode():
+                outputs = self.model.generate(**inputs, max_new_tokens=220, do_sample=False)
+            answer = self.processor.decode(outputs[0][input_length:], skip_special_tokens=True).strip()
+            return answer or "I wasn't able to form a useful response. Please try rephrasing that."
 
     def respond(self, message: str, memories: list[dict[str, Any]]) -> str:
         if not message.strip():
