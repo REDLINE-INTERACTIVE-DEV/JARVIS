@@ -14,6 +14,8 @@ This bridge connects the already-loaded Gemma 4 E4B model in the Kaggle notebook
 
 After the model finishes loading in **Pre trained model** (yashasvishahi/pre-trained-model), run this single cell. It downloads the current bridge launcher from this repository and executes it in the notebook's existing kernel, using the already-loaded model and processor variables.
 
+**Important:** Kaggle's saved output shows the last run completed; that does not mean the model is still resident in RAM/GPU memory. Start an active notebook session and rerun the model-loading cell(s) so the variables `model` and `processor` exist, then run the launcher. You do not need to retrain the model.
+
     import urllib.request
 
     launcher_url = "https://raw.githubusercontent.com/REDLINE-INTERACTIVE-DEV/JARVIS/main/notebook_bridge/kaggle_start_cell.py"
