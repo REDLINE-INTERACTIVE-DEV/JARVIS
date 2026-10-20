@@ -44,6 +44,8 @@ jobs:
       - run: gradle --version
       - name: Build Android debug APK and unit tests
         run: gradle --no-daemon -p android :app:testDebugUnitTest :app:assembleDebug
+      - name: Verify Android APK signature
+        run: "$ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose android/app/build/outputs/apk/debug/app-debug.apk"
       - name: Rename Android APK
         run: cp android/app/build/outputs/apk/debug/app-debug.apk "JARVIS-v0.13.0.apk"
       - name: Upload Android APK
