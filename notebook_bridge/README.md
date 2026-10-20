@@ -168,3 +168,4 @@ Tap **Save**. The app verifies the protected `/auth/check` route, then sends typ
 3. Clear notebook outputs before sharing the notebook. If the token is exposed, restart the bridge with a newly generated token and reconnect.
 4. If the Kaggle session ends, restart the model/API/tunnel. This temporary endpoint is not 24/7 hosting.
 5. Do not commit a real endpoint or token to `runtime-endpoint.json`; keep that public bootstrap file empty and use the app's secure Connection settings.
+6. SQLite memory is stored at `/kaggle/working/jarvis_memory.db` and is session-scoped. It is not automatically backed up across Kaggle sessions; do not commit personal memory or credentials to the public repository.
