@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,10 +82,10 @@ fun JarvisHud(
             val stateGlow = when { speaking -> 1f; listening -> 0.92f; initiating -> 0.7f; else -> 0.42f }
 
             // Cinematic blue reactor glow and precision rings.
-            drawCircle(Color(0xFF007EA8).copy(alpha = 0.10f * breathe), Offset(cx, cy), outer * 1.72f)
-            drawCircle(HudBlue.copy(alpha = 0.24f), Offset(cx, cy), outer * 1.48f, style = Stroke(1.2f))
-            drawCircle(HudCyan.copy(alpha = 0.32f * stateGlow), Offset(cx, cy), outer * 1.32f, style = Stroke(2f))
-            drawCircle(HudIce.copy(alpha = 0.16f), Offset(cx, cy), outer * 1.19f, style = Stroke(1f))
+            drawCircle(color = Color(0xFF007EA8).copy(alpha = 0.10f * breathe), center = Offset(cx, cy), radius = outer * 1.72f)
+            drawCircle(color = HudBlue.copy(alpha = 0.24f), center = Offset(cx, cy), radius = outer * 1.48f, style = Stroke(1.2f))
+            drawCircle(color = HudCyan.copy(alpha = 0.32f * stateGlow), center = Offset(cx, cy), radius = outer * 1.32f, style = Stroke(2f))
+            drawCircle(color = HudIce.copy(alpha = 0.16f), center = Offset(cx, cy), radius = outer * 1.19f, style = Stroke(1f))
 
             // Partial scanning arcs rotate independently around the untouched core artwork.
             drawArc(HudCyan.copy(alpha = 0.88f), scan, 64f, false,
@@ -98,8 +99,8 @@ fun JarvisHud(
             val bars = 88
             for (i in 0 until bars) {
                 val a = Math.toRadians(i * (360.0 / bars) - 90.0)
-                val local = abs(sin(phase * (1.0 + (i % 7) * 0.075) + i * 1.731)).toFloat()
-                val secondary = abs(sin(phase * 0.43f + i * 0.319f))
+                val local = abs(sin(phase.toDouble() * (1.0 + (i % 7) * 0.075) + i * 1.731)).toFloat()
+                val secondary = abs(sin(phase * 0.43f + i * 0.319f)).toFloat()
                 val amplitude = when {
                     listening -> 0.18f + local * 0.78f + secondary * 0.20f
                     speaking -> 0.22f + local * 0.92f + secondary * 0.16f
@@ -119,7 +120,7 @@ fun JarvisHud(
                 drawLine(color.copy(alpha = (0.50f + local * 0.48f) * stateGlow), start, end,
                     strokeWidth = if (i % 4 == 0) 4.1f else if (i % 2 == 0) 2.7f else 1.8f,
                     cap = androidx.compose.ui.graphics.StrokeCap.Round)
-                if (i % 4 == 0) drawCircle(color.copy(alpha = 0.86f * stateGlow), end, 1.7f)
+                if (i % 4 == 0) drawCircle(color = color.copy(alpha = 0.86f * stateGlow), center = end, radius = 1.7f)
             }
 
             // Fine radial calibration ticks and orbit markers.
@@ -145,9 +146,9 @@ fun JarvisHud(
                     dstSize = androidx.compose.ui.unit.IntSize(dstW.toInt(), dstH.toInt()))
             } else {
                 // Safe visual fallback until the original asset is packaged with the app.
-                drawCircle(HudNight, Offset(cx, cy), coreRadius)
-                drawCircle(HudCyan.copy(alpha = stateGlow), Offset(cx, cy), coreRadius, style = Stroke(3.5f))
-                drawCircle(HudIce.copy(alpha = 0.35f), Offset(cx, cy), coreRadius * 0.91f, style = Stroke(1.2f))
+                drawCircle(color = HudNight, center = Offset(cx, cy), radius = coreRadius)
+                drawCircle(color = HudCyan.copy(alpha = stateGlow), center = Offset(cx, cy), radius = coreRadius, style = Stroke(3.5f))
+                drawCircle(color = HudIce.copy(alpha = 0.35f), center = Offset(cx, cy), radius = coreRadius * 0.91f, style = Stroke(1.2f))
             }
         }
         if (core == null) {
