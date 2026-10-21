@@ -10,8 +10,10 @@ class WakePhraseMatcherTest {
         assertNull(WakePhraseMatcher.match("hello there"))
         assertEquals(null, WakePhraseMatcher.match("jarvis")?.command)
         assertEquals(null, WakePhraseMatcher.match("Hey JARVIS")?.command)
+        assertEquals(null, WakePhraseMatcher.match("hello JARVIS")?.command)
         assertEquals("open my calendar", WakePhraseMatcher.match("JARVIS, open my calendar")?.command)
         assertEquals("open my calendar", WakePhraseMatcher.match("hey jarvis open my calendar")?.command)
+        assertEquals("open my calendar", WakePhraseMatcher.match("hello JARVIS open my calendar")?.command)
         assertEquals("what is the time", WakePhraseMatcher.match("JARVIS: what is the time")?.command)
     }
 
@@ -28,11 +30,14 @@ class WakePhraseMatcherTest {
             repeat(50) { i ->
                 add("JARVIS, run voice test command $i" to "run voice test command $i")
             }
-            repeat(50) { i ->
+            repeat(34) { i ->
                 add("hey JARVIS, run voice test command $i" to "run voice test command $i")
             }
+            repeat(33) { i ->
+                add("hello JARVIS, run voice test command $i" to "run voice test command $i")
+            }
         }
-        assertEquals(100, cases.size)
+        assertEquals(117, cases.size)
         cases.forEach { (spoken, expected) ->
             assertEquals(expected, WakePhraseMatcher.match(spoken)?.command)
         }

@@ -4,7 +4,7 @@ data class WakeMatch(val command: String?)
 
 object WakePhraseMatcher {
     private val wakeRegex = Regex(
-        """^\s*(?:hey\s+)?jarvis(?:\b|[,.:;!?-])(.*)$""",
+        """^\s*(?:(?:hey|hello)\s+)?jarvis(?:\b|[,.:;!?-])(.*)$""",
         RegexOption.IGNORE_CASE,
     )
 

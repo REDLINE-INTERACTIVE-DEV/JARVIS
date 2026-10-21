@@ -104,7 +104,27 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             tts?.language = Locale.UK
-            tts?.setPitch(0.92f)
+
+            // Prefer an available British-English masculine voice when the device TTS engine exposes one.
+            // Voice names vary by engine; gracefully fall back to a British-English voice or the engine default.
+            val britishVoices = tts?.voices.orEmpty().filter {
+                it.locale.language.equals("en", ignoreCase = true) &&
+                    it.locale.country.equals("GB", ignoreCase = true)
+            }
+            val preferredVoice = britishVoices.firstOrNull { voice ->
+                val id = voice.name.lowercase(Locale.ROOT)
+                !id.contains("female") && (
+                    id.contains("rjs") || id.contains("male") ||
+                    listOf("daniel", "george", "arthur", "oliver").any(id::contains)
+                )
+            } ?: britishVoices.firstOrNull { voice ->
+                val id = voice.name.lowercase(Locale.ROOT)
+                !id.contains("female") && !id.contains("gbd")
+            }
+            preferredVoice?.let { tts?.voice = it }
+
+            // A restrained, lower-pitched delivery; the exact available sound depends on the installed TTS engine.
+            tts?.setPitch(0.84f)
             tts?.setSpeechRate(0.88f)
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) { runOnUiThread { viewModel.setSpeaking(true) } }
@@ -125,6 +145,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private fun JarvisApp(vm: JarvisViewModel) {
         val state by vm.state.collectAsState()
         val context = LocalContext.current
+        var selectedTab by remember { mutableIntStateOf(0) }
         var showConnectionDialog by remember { mutableStateOf(false) }
         var endpointDraft by remember(state.endpoint) { mutableStateOf(state.endpoint) }
         var tokenDraft by remember { mutableStateOf(vm.currentApiToken()) }
@@ -172,89 +193,133 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                         }) { Text("Connection") }
                     }
 
-                    Spacer(Modifier.height(8.dp))
+                    TabRow(
+                        selectedTabIndex = selectedTab,
+                        containerColor = Color(0xFF04151A),
+                        contentColor = JarvisBlue,
+                    ) {
+                        listOf("INTERFACE", "CHATS", "RESERVED").forEachIndexed { index, label ->
+                            Tab(
+                                selected = selectedTab == index,
+                                onClick = { selectedTab = index },
+                                text = {
+                                    Text(
+                                        label,
+                                        fontSize = 11.sp,
+                                        letterSpacing = 1.1.sp,
+                                        fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
+                                    )
+                                },
+                                selectedContentColor = JarvisBlue,
+                                unselectedContentColor = Color(0xFF8BAAB0),
+                            )
+                        }
+                    }
 
-                    JarvisHud(
-                        listening = state.listening,
-                        speaking = state.speaking,
-                        initiating = state.busy && !state.listening && !state.speaking,
-                        onClick = {
-                            if (!state.busy) {
-                                if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-                                    vm.setListening(false)
-                                    vm.setError("Speech recognition is not available on this device.")
-                                } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                                    WakeWordService.startInteractiveListening(context)
-                                } else {
-                                    microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    when (selectedTab) {
+                        0 -> {
+                            // Voice-first view: replies are spoken, but assistant text is deliberately not rendered here.
+                            Spacer(Modifier.height(6.dp))
+                            JarvisHud(
+                                listening = state.listening,
+                                speaking = state.speaking,
+                                initiating = state.busy && !state.listening && !state.speaking,
+                                onClick = {
+                                    if (!state.busy) {
+                                        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+                                            vm.setListening(false)
+                                            vm.setError("Speech recognition is not available on this device.")
+                                        } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                            WakeWordService.startInteractiveListening(context)
+                                        } else {
+                                            microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                        }
+                                    }
+                                },
+                            )
+                            val status = when {
+                                state.listening -> "PERCEIVING"
+                                state.busy && !state.speaking -> "INITIATING"
+                                state.speaking -> "SPEAKING"
+                                else -> "SAY “JARVIS” OR “HELLO JARVIS”"
+                            }
+                            Text(
+                                status,
+                                color = JarvisBlue,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 1.5.sp,
+                            )
+                            Spacer(Modifier.weight(1f))
+                            InputBar(
+                                value = state.input,
+                                onValueChange = vm::setInput,
+                                onSend = vm::send,
+                                enabled = !state.busy,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                        }
+                        1 -> {
+                            // Chat view: show the full conversation history and keep the composer at the bottom.
+                            LazyColumn(
+                                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                                contentPadding = PaddingValues(vertical = 12.dp),
+                            ) {
+                                items(state.messages) { message ->
+                                    Column(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalAlignment = if (message.fromUser) Alignment.End else Alignment.Start,
+                                    ) {
+                                        Text(
+                                            if (message.fromUser) "YOU" else "JARVIS",
+                                            color = JarvisBlue,
+                                            fontSize = 10.sp,
+                                            letterSpacing = 1.3.sp,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                        Surface(
+                                            color = if (message.fromUser) Color(0xFF0C2932) else Color(0xFF061A20),
+                                            shape = MaterialTheme.shapes.medium,
+                                        ) {
+                                            Text(
+                                                message.text,
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                                color = Color(0xFFD8F8FF),
+                                                fontSize = 14.sp,
+                                            )
+                                        }
+                                    }
                                 }
                             }
-                        },
-                    )
-
-                    val status = when {
-                        state.listening -> "PERCEIVING"
-                        state.busy -> "INITIATING"
-                        state.speaking -> "SPEAKING"
-                        else -> null
-                    }
-
-                    if (status != null) {
-                        Text(
-                            status,
-                            color = JarvisBlue,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = 2.8.sp,
-                        )
-                    } else {
-                        Spacer(Modifier.height(19.dp))
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        OutlinedTextField(
-                            value = state.input,
-                            onValueChange = vm::setInput,
-                            placeholder = {
-                                Text(
-                                    "Talk to JARVIS...",
-                                    color = Color(0xFF8BAAB0),
-                                )
-                            },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            enabled = !state.busy,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = JarvisBlue,
-                                unfocusedBorderColor = Color(0xFF24606C),
-                                cursorColor = JarvisBlue,
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                            ),
-                        )
-
-                        Button(
-                            onClick = vm::send,
-                            enabled = !state.busy && state.input.isNotBlank(),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF425055),
-                                disabledContainerColor = Color(0xFF2C3437),
-                                contentColor = Color.White,
-                            ),
-                            contentPadding = PaddingValues(horizontal = 22.dp, vertical = 15.dp),
-                        ) {
-                            Text("Send", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            InputBar(
+                                value = state.input,
+                                onValueChange = vm::setInput,
+                                onSend = vm::send,
+                                enabled = !state.busy,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                        }
+                        else -> {
+                            Spacer(Modifier.weight(1f))
+                            Text(
+                                "THIS SPACE IS RESERVED",
+                                color = JarvisBlue,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 2.sp,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "We'll build this tab when you give me its instructions.",
+                                color = Color(0xFF8BAAB0),
+                                fontSize = 12.sp,
+                            )
+                            Spacer(Modifier.weight(1f))
                         }
                     }
 
                     state.error?.let {
-                        Spacer(Modifier.height(6.dp))
                         Text(
                             "JARVIS CONNECTION UNAVAILABLE",
                             color = Color(0xFFFFB4A8),
@@ -262,18 +327,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                             letterSpacing = 1.2.sp,
                         )
                     }
-
-                    if (state.messages.isNotEmpty()) {
-                        Spacer(Modifier.height(8.dp))
-                        val last = state.messages.last()
-                        Text(
-                            last.text,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
-                            color = if (last.fromUser) Color(0xFF82AAB3) else Color(0xFFD8F8FF),
-                            fontSize = 12.sp,
-                        )
-                    }
                 }
+
                 if (showConnectionDialog) {
                     AlertDialog(
                         onDismissRequest = { showConnectionDialog = false },
@@ -314,6 +369,48 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                         containerColor = Color(0xFF04151A),
                     )
                 }
+            }
+        }
+    }
+
+    @Composable
+    private fun InputBar(
+        value: String,
+        onValueChange: (String) -> Unit,
+        onSend: () -> Unit,
+        enabled: Boolean,
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                placeholder = { Text("Talk to JARVIS...", color = Color(0xFF8BAAB0)) },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+                enabled = enabled,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = JarvisBlue,
+                    unfocusedBorderColor = Color(0xFF24606C),
+                    cursorColor = JarvisBlue,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                ),
+            )
+            Button(
+                onClick = onSend,
+                enabled = enabled && value.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF425055),
+                    disabledContainerColor = Color(0xFF2C3437),
+                    contentColor = Color.White,
+                ),
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 15.dp),
+            ) {
+                Text("Send", fontSize = 15.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
