@@ -329,20 +329,25 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                                 }
                             }
                             items(state.messages) { message ->
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth(0.88f).align(if (message.fromUser) Alignment.End else Alignment.Start),
-                                    shape = MaterialTheme.shapes.large,
-                                    color = if (message.fromUser) Color(0xFF0D3440) else Color(0xFF071D24),
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        1.dp, if (message.fromUser) Color(0xFF24606C) else Color(0xFF183E47)
-                                    ),
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start,
                                 ) {
-                                    Text(
-                                        message.text,
-                                        modifier = Modifier.padding(12.dp),
-                                        color = Color(0xFFD8F8FF),
-                                        fontSize = 14.sp,
-                                    )
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth(0.88f),
+                                        shape = MaterialTheme.shapes.large,
+                                        color = if (message.fromUser) Color(0xFF0D3440) else Color(0xFF071D24),
+                                        border = androidx.compose.foundation.BorderStroke(
+                                            1.dp, if (message.fromUser) Color(0xFF24606C) else Color(0xFF183E47)
+                                        ),
+                                    ) {
+                                        Text(
+                                            message.text,
+                                            modifier = Modifier.padding(12.dp),
+                                            color = Color(0xFFD8F8FF),
+                                            fontSize = 14.sp,
+                                        )
+                                    }
                                 }
                             }
                             if (state.busy) {
@@ -581,10 +586,38 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     )
                 }
 
+                // Active radial waveform: each ray changes length and brightness independently.
+                // Standby keeps the same silhouette compact and quiet.
+                val rayCount = 144
+                for (i in 0 until rayCount) {
+                    val angle = Math.toRadians(i * 360.0 / rayCount)
+                    val phase = sweep / (if (active) 5.5f else 18f) + i * 1.731f
+                    val variation = (0.5f + 0.5f * sin(phase)).coerceIn(0.08f, 1f)
+                    val innerFactor = if (active) 1.035f else 1.045f
+                    val extension = if (active) (0.035f + variation * 0.31f) else (0.018f + variation * 0.035f)
+                    val startR = rOuter * innerFactor
+                    val endR = rOuter * (innerFactor + extension)
+                    val rayColor = when {
+                        active && i % 11 == 0 -> Color(0xFFB8FAFF)
+                        active -> Color(0xFF58DFF5).copy(alpha = 0.42f + variation * 0.58f)
+                        else -> Color(0xFF286477).copy(alpha = 0.30f + variation * 0.30f)
+                    }
+                    drawLine(
+                        color = rayColor,
+                        start = Offset(cx + cos(angle).toFloat() * startR, cy + sin(angle).toFloat() * startR),
+                        end = Offset(cx + cos(angle).toFloat() * endR, cy + sin(angle).toFloat() * endR),
+                        strokeWidth = if (active && i % 11 == 0) 2.5f else if (active) 1.7f else 1.0f,
+                        cap = StrokeCap.Round,
+                    )
+                }
+
+                // Rotating arc segments: slower in standby, faster while active.
+                val arcRotation = sweep * if (active) 1.0f else 0.22f
+
                 // Outer HUD brackets / broken arcs.
                 drawArc(
                     color = Color(0xFF73F4FF),
-                    startAngle = 198f,
+                    startAngle = 198f + arcRotation,
                     sweepAngle = 112f,
                     useCenter = false,
                     topLeft = Offset(cx - rOuter, cy - rOuter),
@@ -593,7 +626,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 )
                 drawArc(
                     color = Color(0xFF73F4FF),
-                    startAngle = 8f,
+                    startAngle = 8f - arcRotation * 0.7f,
                     sweepAngle = 105f,
                     useCenter = false,
                     topLeft = Offset(cx - rOuter, cy - rOuter),
