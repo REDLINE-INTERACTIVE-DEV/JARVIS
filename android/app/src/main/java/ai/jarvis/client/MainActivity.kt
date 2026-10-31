@@ -128,6 +128,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         var showConnectionDialog by remember { mutableStateOf(false) }
         var endpointDraft by remember(state.endpoint) { mutableStateOf(state.endpoint) }
         var tokenDraft by remember { mutableStateOf(vm.currentApiToken()) }
+        var selectedTab by remember { mutableStateOf("INTERFACE") }
+        var newTask by remember { mutableStateOf("") }
+        val localTasks = remember { mutableStateListOf<Pair<String, Boolean>>() }
 
         LaunchedEffect(state.speakToken) {
             if (state.speakToken > 0) state.lastAssistantText?.let { speak(it) }
@@ -173,7 +176,36 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     }
 
                     Spacer(Modifier.height(8.dp))
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        listOf("INTERFACE", "CHATS", "TASKS").forEach { tab ->
+                            val chosen = selectedTab == tab
+                            Surface(
+                                modifier = Modifier.weight(1f).clickable { selectedTab = tab },
+                                shape = MaterialTheme.shapes.large,
+                                color = if (chosen) Color(0xFF0D3440) else Color(0xFF04151A),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp, if (chosen) JarvisBlue else Color(0xFF183E47)
+                                ),
+                            ) {
+                                Text(
+                                    tab,
+                                    modifier = Modifier.padding(vertical = 12.dp),
+                                    color = if (chosen) JarvisBlue else Color(0xFF8BAAB0),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    letterSpacing = 1.1.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                )
+                            }
+                        }
+                    }
 
+                    Spacer(Modifier.height(8.dp))
+
+                    if (selectedTab == "INTERFACE") {
                     JarvisHud(
                         listening = state.listening,
                         speaking = state.speaking,
@@ -272,6 +304,171 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                             color = if (last.fromUser) Color(0xFF82AAB3) else Color(0xFFD8F8FF),
                             fontSize = 12.sp,
                         )
+                    }
+                    } else if (selectedTab == "CHATS") {
+                        Text(
+                            "CONVERSATION LOG",
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                            color = JarvisBlue,
+                            fontSize = 11.sp,
+                            letterSpacing = 2.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        LazyColumn(
+                            modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            if (state.messages.isEmpty()) {
+                                item {
+                                    Text(
+                                        "No conversations yet. Send a message to start talking to JARVIS.",
+                                        color = Color(0xFF8BAAB0),
+                                        fontSize = 14.sp,
+                                        modifier = Modifier.padding(16.dp),
+                                    )
+                                }
+                            }
+                            items(state.messages) { message ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start,
+                                ) {
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth(0.88f),
+                                        shape = MaterialTheme.shapes.large,
+                                        color = if (message.fromUser) Color(0xFF0D3440) else Color(0xFF071D24),
+                                        border = androidx.compose.foundation.BorderStroke(
+                                            1.dp, if (message.fromUser) Color(0xFF24606C) else Color(0xFF183E47)
+                                        ),
+                                    ) {
+                                        Text(
+                                            message.text,
+                                            modifier = Modifier.padding(12.dp),
+                                            color = Color(0xFFD8F8FF),
+                                            fontSize = 14.sp,
+                                        )
+                                    }
+                                }
+                            }
+                            if (state.busy) {
+                                item { Text("JARVIS IS THINKING  ·  ·  ·", color = JarvisBlue, fontSize = 12.sp, letterSpacing = 1.5.sp) }
+                            }
+                        }
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedTextField(
+                                value = state.input,
+                                onValueChange = vm::setInput,
+                                placeholder = { Text("Message JARVIS...", color = Color(0xFF8BAAB0)) },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                                enabled = !state.busy,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = JarvisBlue,
+                                    unfocusedBorderColor = Color(0xFF24606C),
+                                    cursorColor = JarvisBlue,
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                ),
+                            )
+                            Button(
+                                onClick = vm::send,
+                                enabled = !state.busy && state.input.isNotBlank(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D3440)),
+                            ) { Text(if (state.busy) "…" else "SEND") }
+                        }
+                    } else {
+                        Text(
+                            "TASK CONTROL",
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                            color = JarvisBlue,
+                            fontSize = 11.sp,
+                            letterSpacing = 2.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "LOCAL TASK LIST",
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                            color = Color(0xFF8BAAB0),
+                            fontSize = 10.sp,
+                            letterSpacing = 1.5.sp,
+                        )
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedTextField(
+                                value = newTask,
+                                onValueChange = { newTask = it },
+                                modifier = Modifier.weight(1f),
+                                placeholder = { Text("Add a task...", color = Color(0xFF8BAAB0)) },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = JarvisBlue,
+                                    unfocusedBorderColor = Color(0xFF24606C),
+                                    cursorColor = JarvisBlue,
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                ),
+                            )
+                            Button(
+                                onClick = {
+                                    val task = newTask.trim()
+                                    if (task.isNotEmpty()) {
+                                        localTasks.add(task to false)
+                                        newTask = ""
+                                    }
+                                },
+                                enabled = newTask.isNotBlank(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D3440)),
+                            ) { Text("ADD") }
+                        }
+                        LazyColumn(
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            if (localTasks.isEmpty()) {
+                                item {
+                                    Text(
+                                        "No tasks yet. Add a task above to track it here.",
+                                        modifier = Modifier.padding(16.dp),
+                                        color = Color(0xFF8BAAB0),
+                                        fontSize = 14.sp,
+                                    )
+                                }
+                            }
+                            items(localTasks.size) { index ->
+                                val task = localTasks[index]
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = MaterialTheme.shapes.medium,
+                                    color = Color(0xFF061820),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF183E47)),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Checkbox(
+                                            checked = task.second,
+                                            onCheckedChange = { done -> localTasks[index] = task.first to done },
+                                            colors = CheckboxDefaults.colors(checkedColor = JarvisBlue, checkmarkColor = Color.Black),
+                                        )
+                                        Text(
+                                            task.first,
+                                            modifier = Modifier.weight(1f),
+                                            color = if (task.second) Color(0xFF6D929A) else Color(0xFFD8F8FF),
+                                            fontSize = 14.sp,
+                                        )
+                                        Text(if (task.second) "DONE" else "ACTIVE", color = JarvisBlue, fontSize = 9.sp, letterSpacing = 1.sp)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 if (showConnectionDialog) {
@@ -389,10 +586,38 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     )
                 }
 
+                // Active radial waveform: each ray changes length and brightness independently.
+                // Standby keeps the same silhouette compact and quiet.
+                val rayCount = 144
+                for (i in 0 until rayCount) {
+                    val angle = Math.toRadians(i * 360.0 / rayCount)
+                    val phase = sweep / (if (active) 5.5f else 18f) + i * 1.731f
+                    val variation = (0.5f + 0.5f * sin(phase)).coerceIn(0.08f, 1f)
+                    val innerFactor = if (active) 1.035f else 1.045f
+                    val extension = if (active) (0.035f + variation * 0.31f) else (0.018f + variation * 0.035f)
+                    val startR = rOuter * innerFactor
+                    val endR = rOuter * (innerFactor + extension)
+                    val rayColor = when {
+                        active && i % 11 == 0 -> Color(0xFFB8FAFF)
+                        active -> Color(0xFF58DFF5).copy(alpha = 0.42f + variation * 0.58f)
+                        else -> Color(0xFF286477).copy(alpha = 0.30f + variation * 0.30f)
+                    }
+                    drawLine(
+                        color = rayColor,
+                        start = Offset(cx + cos(angle).toFloat() * startR, cy + sin(angle).toFloat() * startR),
+                        end = Offset(cx + cos(angle).toFloat() * endR, cy + sin(angle).toFloat() * endR),
+                        strokeWidth = if (active && i % 11 == 0) 2.5f else if (active) 1.7f else 1.0f,
+                        cap = StrokeCap.Round,
+                    )
+                }
+
+                // Rotating arc segments: slower in standby, faster while active.
+                val arcRotation = sweep * if (active) 1.0f else 0.22f
+
                 // Outer HUD brackets / broken arcs.
                 drawArc(
                     color = Color(0xFF73F4FF),
-                    startAngle = 198f,
+                    startAngle = 198f + arcRotation,
                     sweepAngle = 112f,
                     useCenter = false,
                     topLeft = Offset(cx - rOuter, cy - rOuter),
@@ -401,7 +626,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 )
                 drawArc(
                     color = Color(0xFF73F4FF),
-                    startAngle = 8f,
+                    startAngle = 8f - arcRotation * 0.7f,
                     sweepAngle = 105f,
                     useCenter = false,
                     topLeft = Offset(cx - rOuter, cy - rOuter),
